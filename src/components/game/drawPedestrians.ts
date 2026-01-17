@@ -144,6 +144,18 @@ export function drawPedestrians(
       const yOffset = getSidewalkYOffset(ped.direction, ped.sidewalkSide);
       pedX = centerX + meta.vec.dx * ped.progress + meta.normal.nx * sidewalkOffset + ped.activityOffsetX;
       pedY = centerY + meta.vec.dy * ped.progress + meta.normal.ny * sidewalkOffset + ped.activityOffsetY + yOffset;
+    } else if (ped.state === 'spawning') {
+      // Standing still at spawn location - centered on tile
+      const { screenX, screenY } = gridToScreen(ped.tileX, ped.tileY, 0, 0);
+      pedX = screenX + TILE_WIDTH / 2;
+      pedY = screenY + TILE_HEIGHT / 2;
+      
+      if (ped.name && ped.name !== 'name') {
+        console.log(`[Draw] Spawning character body: ${ped.name}`);
+        console.log(`[Draw]   - Tile: (${ped.tileX}, ${ped.tileY})`);
+        console.log(`[Draw]   - gridToScreen result: (${screenX}, ${screenY})`);
+        console.log(`[Draw]   - Final pedX, pedY (world coords): (${pedX}, ${pedY})`);
+      }
     } else if (ped.state === 'idle') {
       // Standing still at current position
       const { screenX, screenY } = gridToScreen(ped.tileX, ped.tileY, 0, 0);
@@ -183,13 +195,29 @@ export function drawPedestrians(
     const opacity = getPedestrianOpacity(ped);
     if (opacity <= 0) continue;
 
+    if (ped.state === 'spawning' && ped.name && ped.name !== 'name') {
+      const transform = ctx.getTransform();
+      console.log(`[Draw] Before translate - transform: a=${transform.a}, b=${transform.b}, c=${transform.c}, d=${transform.d}, e=${transform.e}, f=${transform.f}`);
+      console.log(`[Draw] About to translate to (${pedX}, ${pedY})`);
+    }
+    
     ctx.save();
     ctx.translate(pedX, pedY);
+    
+    if (ped.state === 'spawning' && ped.name && ped.name !== 'name') {
+      const transform = ctx.getTransform();
+      console.log(`[Draw] After translate - transform: a=${transform.a}, b=${transform.b}, c=${transform.c}, d=${transform.d}, e=${transform.e}, f=${transform.f}`);
+      console.log(`[Draw] Final screen position (e, f): (${transform.e}, ${transform.f})`);
+    }
+    
     if (opacity < 1) ctx.globalAlpha = opacity;
 
     // OPTIMIZED: Use simple LOD for zoomed out view
     if (useSimpleLOD) {
       drawSimplePedestrian(ctx, ped);
+      if (ped.state === 'spawning' && ped.spawnProgress !== undefined) {
+        drawSpawnIndicator(ctx, ped, zoom);
+      }
       ctx.restore();
       continue;
     }
@@ -197,10 +225,15 @@ export function drawPedestrians(
     // Draw based on current activity/state
     // OPTIMIZED: Use medium detail for most activities when zoomed out
     if (useMediumLOD) {
-      if (ped.state === 'at_recreation') {
+      if (ped.state === 'spawning') {
+        drawIdlePerson(ctx, ped);
+      } else if (ped.state === 'at_recreation') {
         drawMediumActivityPedestrian(ctx, ped);
       } else {
         drawMediumWalkingPedestrian(ctx, ped);
+      }
+      if (ped.state === 'spawning' && ped.spawnProgress !== undefined) {
+        drawSpawnIndicator(ctx, ped, zoom);
       }
       ctx.restore();
       continue;
@@ -251,8 +284,9 @@ export function drawPedestrians(
         drawSpectator(ctx, ped);
         break;
       default:
-        // Default walking/standing pedestrian
-        if (ped.state === 'socializing') {
+        if (ped.state === 'spawning') {
+          drawIdlePerson(ctx, ped);
+        } else if (ped.state === 'socializing') {
           drawSocializingPerson(ctx, ped);
         } else if (ped.state === 'idle') {
           drawIdlePerson(ctx, ped);
@@ -261,8 +295,52 @@ export function drawPedestrians(
         }
     }
 
+    if (ped.state === 'spawning' && ped.spawnProgress !== undefined) {
+      drawSpawnIndicator(ctx, ped, zoom);
+    }
+
     ctx.restore();
   }
+}
+
+function drawSpawnIndicator(ctx: CanvasRenderingContext2D, ped: Pedestrian, zoom: number): void {
+  const progress = ped.spawnProgress ?? 0;
+  const fadeStart = 0.7;
+  let alpha = 1;
+  if (progress > fadeStart) {
+    alpha = 1 - (progress - fadeStart) / (1 - fadeStart);
+  }
+  if (alpha <= 0) return;
+  
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  
+  const scale = Math.max(1, 1.2 / zoom);
+  
+  ctx.fillStyle = '#FF0000';
+  ctx.beginPath();
+  ctx.moveTo(0, -35 * scale);
+  ctx.lineTo(-10 * scale, -22 * scale);
+  ctx.lineTo(10 * scale, -22 * scale);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = 2 * scale;
+  ctx.stroke();
+  
+  ctx.font = `bold ${14 * scale}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  const nameWidth = ctx.measureText(ped.name).width;
+  const labelPadding = 6 * scale;
+  const labelHeight = 18 * scale;
+  const labelY = -40 * scale;
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+  ctx.fillRect(-nameWidth / 2 - labelPadding, labelY - labelHeight, nameWidth + labelPadding * 2, labelHeight);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillText(ped.name, 0, labelY);
+  
+  ctx.restore();
 }
 
 /**

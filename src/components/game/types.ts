@@ -198,6 +198,7 @@ export type PedestrianDestType = 'school' | 'commercial' | 'industrial' | 'park'
 
 // Pedestrian behavioral states
 export type PedestrianState =
+  | 'spawning'          // User character spawning animation (stands still with indicator)
   | 'walking'           // Walking along a path
   | 'entering_building' // Entering a building (fading out animation)
   | 'inside_building'   // Inside a building (invisible)
@@ -288,6 +289,8 @@ export type Pedestrian = {
   beachTileY: number;        // Beach water tile Y (for swimming position)
   beachEdge: 'north' | 'east' | 'south' | 'west' | null; // Which edge of water tile is beach
   name: string;              // Pedestrian name for display
+  userId?: string;           // User ID if spawned from user profile
+  spawnProgress?: number;    // 0-1 progress for spawn animation (only for user characters)
 };
 
 // Boat types for water navigation

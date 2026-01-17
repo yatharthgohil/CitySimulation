@@ -71,6 +71,7 @@ import {
 } from '@/components/game/gridFinders';
 import { drawAirplanes as drawAirplanesUtil, drawHelicopters as drawHelicoptersUtil, drawSeaplanes as drawSeaplanesUtil } from '@/components/game/drawAircraft';
 import { useVehicleSystems, VehicleSystemRefs, VehicleSystemState } from '@/components/game/vehicleSystems';
+import { useUserCharacters } from '@/hooks/useUserCharacters';
 import { getVisiblePedestrians } from '@/components/game/pedestrianSystem';
 import { useBuildingHelpers } from '@/components/game/buildingHelpers';
 import { useAircraftSystems, AircraftSystemRefs, AircraftSystemState } from '@/components/game/aircraftSystems';
@@ -78,6 +79,7 @@ import { useBargeSystem, BargeSystemRefs, BargeSystemState } from '@/components/
 import { useBoatSystem, BoatSystemRefs, BoatSystemState } from '@/components/game/boatSystem';
 import { useSeaplaneSystem, SeaplaneSystemRefs, SeaplaneSystemState } from '@/components/game/seaplaneSystem';
 import { useEffectsSystems, EffectsSystemRefs, EffectsSystemState } from '@/components/game/effectsSystems';
+import { SpawnFlashMessage } from '@/components/game/SpawnFlashMessage';
 import {
   analyzeMergedRoad,
 } from '@/components/game/trafficSystem';
@@ -126,7 +128,7 @@ export interface CanvasIsometricGridProps {
 
 // Canvas-based Isometric Grid - HIGH PERFORMANCE
 export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMobile = false, navigationTarget, onNavigationComplete, onViewportChange, onBargeDelivery }: CanvasIsometricGridProps) {
-  const { state, latestStateRef, placeAtTile, finishTrackDrag, connectToCity, checkAndDiscoverCities, currentSpritePack, visualHour } = useGame();
+  const { state, latestStateRef, placeAtTile, finishTrackDrag, connectToCity, checkAndDiscoverCities, currentSpritePack, visualHour, addNotification } = useGame();
   const { grid, gridSize, selectedTool, speed, adjacentCities, waterBodies, gameVersion } = state;
   
   // PERF: Use latestStateRef for real-time grid access in animation loops
@@ -146,6 +148,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
   const [isDragging, setIsDragging] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
   const [isWheelZooming, setIsWheelZooming] = useState(false); // State to trigger re-render when wheel zooming stops
+  const [spawnFlashName, setSpawnFlashName] = useState<string | null>(null);
   const isPanningRef = useRef(false); // Ref for animation loop to check panning state
   const isPinchZoomingRef = useRef(false); // Ref for animation loop to check pinch zoom state
   const isWheelZoomingRef = useRef(false); // Ref for animation loop to check desktop wheel zoom state
@@ -353,6 +356,67 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     drawEmergencyVehicles,
     drawIncidentIndicators,
   } = useVehicleSystems(vehicleSystemRefs, vehicleSystemState);
+
+  const getCanvasCssSize = useCallback(() => {
+    const dpr = window.devicePixelRatio || 1;
+    const fallback = { width: canvasSize.width / dpr, height: canvasSize.height / dpr };
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return fallback;
+    return { width: rect.width, height: rect.height };
+  }, [canvasSize.width, canvasSize.height]);
+
+  // Calculate camera bounds based on grid size
+  const getMapBounds = useCallback((currentZoom: number, canvasW: number, canvasH: number) => {
+    const n = gridSize;
+    const padding = 100; // Allow some over-scroll
+    
+    // Map bounds in world coordinates
+    const mapLeft = -(n - 1) * TILE_WIDTH / 2;
+    const mapRight = (n - 1) * TILE_WIDTH / 2;
+    const mapTop = 0;
+    const mapBottom = (n - 1) * TILE_HEIGHT;
+    
+    const minOffsetX = padding - mapRight * currentZoom;
+    const maxOffsetX = canvasW - padding - mapLeft * currentZoom;
+    const minOffsetY = padding - mapBottom * currentZoom;
+    const maxOffsetY = canvasH - padding - mapTop * currentZoom;
+    
+    return { minOffsetX, maxOffsetX, minOffsetY, maxOffsetY };
+  }, [gridSize]);
+  
+  // Clamp offset to keep camera within reasonable bounds
+  const clampOffset = useCallback((newOffset: { x: number; y: number }, currentZoom: number) => {
+    const { width, height } = getCanvasCssSize();
+    const bounds = getMapBounds(currentZoom, width, height);
+    return {
+      x: Math.max(bounds.minOffsetX, Math.min(bounds.maxOffsetX, newOffset.x)),
+      y: Math.max(bounds.minOffsetY, Math.min(bounds.maxOffsetY, newOffset.y)),
+    };
+  }, [getCanvasCssSize, getMapBounds]);
+
+  const handleCharacterSpawned = useCallback((name: string, tileX: number, tileY: number) => {
+    setSpawnFlashName(name);
+    
+    requestAnimationFrame(() => {
+      const currentZoom = worldStateRef.current.zoom;
+      const { width, height } = getCanvasCssSize();
+      
+      const { screenX, screenY } = gridToScreen(tileX, tileY, 0, 0);
+      const tileCenterX = screenX + TILE_WIDTH / 2;
+      const tileCenterY = screenY + TILE_HEIGHT / 2;
+      
+      const newOffsetX = width / 2 - tileCenterX * currentZoom;
+      const newOffsetY = height / 2 - tileCenterY * currentZoom;
+      
+      const clampedOffset = clampOffset({ x: newOffsetX, y: newOffsetY }, currentZoom);
+      
+      console.log(`[Camera] Panning to tile (${tileX}, ${tileY}), world (${tileCenterX}, ${tileCenterY}), offset (${clampedOffset.x}, ${clampedOffset.y}), zoom ${currentZoom}`);
+      
+      setOffset(clampedOffset);
+    });
+  }, [clampOffset, getCanvasCssSize]);
+
+  useUserCharacters(pedestriansRef, pedestrianIdRef, state.grid, state.gridSize, handleCharacterSpawned);
 
   // Use extracted aircraft systems
   const aircraftSystemRefs: AircraftSystemRefs = {
@@ -2583,34 +2647,6 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     }
   }, [offset, gridSize, selectedTool, placeAtTile, zoom, showsDragGrid, supportsDragPlace, setSelectedTile, findBuildingOrigin, grid]);
   
-  // Calculate camera bounds based on grid size
-  const getMapBounds = useCallback((currentZoom: number, canvasW: number, canvasH: number) => {
-    const n = gridSize;
-    const padding = 100; // Allow some over-scroll
-    
-    // Map bounds in world coordinates
-    const mapLeft = -(n - 1) * TILE_WIDTH / 2;
-    const mapRight = (n - 1) * TILE_WIDTH / 2;
-    const mapTop = 0;
-    const mapBottom = (n - 1) * TILE_HEIGHT;
-    
-    const minOffsetX = padding - mapRight * currentZoom;
-    const maxOffsetX = canvasW - padding - mapLeft * currentZoom;
-    const minOffsetY = padding - mapBottom * currentZoom;
-    const maxOffsetY = canvasH - padding - mapTop * currentZoom;
-    
-    return { minOffsetX, maxOffsetX, minOffsetY, maxOffsetY };
-  }, [gridSize]);
-  
-  // Clamp offset to keep camera within reasonable bounds
-  const clampOffset = useCallback((newOffset: { x: number; y: number }, currentZoom: number) => {
-    const bounds = getMapBounds(currentZoom, canvasSize.width, canvasSize.height);
-    return {
-      x: Math.max(bounds.minOffsetX, Math.min(bounds.maxOffsetX, newOffset.x)),
-      y: Math.max(bounds.minOffsetY, Math.min(bounds.maxOffsetY, newOffset.y)),
-    };
-  }, [getMapBounds, canvasSize.width, canvasSize.height]);
-
   // Handle minimap navigation - center the view on the target tile
   useEffect(() => {
     if (!navigationTarget) return;
@@ -2618,9 +2654,10 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     // Convert grid coordinates to screen coordinates
     const { screenX, screenY } = gridToScreen(navigationTarget.x, navigationTarget.y, 0, 0);
     
-    // Calculate offset to center this position on the canvas
-    const centerX = canvasSize.width / 2;
-    const centerY = canvasSize.height / 2;
+    // Calculate offset to center this position on the canvas (CSS pixels)
+    const { width, height } = getCanvasCssSize();
+    const centerX = width / 2;
+    const centerY = height / 2;
     
     const newOffset = {
       x: centerX - screenX * zoom,
@@ -2628,15 +2665,16 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     };
     
     // Clamp and set the new offset - this is a legitimate use case for responding to navigation requests
-    const bounds = getMapBounds(zoom, canvasSize.width, canvasSize.height);
-    setOffset({ // eslint-disable-line
+    const bounds = getMapBounds(zoom, width, height);
+    // eslint-disable-next-line
+    setOffset({
       x: Math.max(bounds.minOffsetX, Math.min(bounds.maxOffsetX, newOffset.x)),
       y: Math.max(bounds.minOffsetY, Math.min(bounds.maxOffsetY, newOffset.y)),
     });
     
     // Signal that navigation is complete
     onNavigationComplete?.();
-  }, [navigationTarget, zoom, canvasSize.width, canvasSize.height, getMapBounds, onNavigationComplete]);
+  }, [navigationTarget, zoom, getCanvasCssSize, getMapBounds, onNavigationComplete]);
 
   /**
    * Calculate pedestrian screen position (same logic as drawPedestrians.ts)
@@ -3193,6 +3231,11 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         style={{ mixBlendMode: 'multiply' }}
       />
       
+      <SpawnFlashMessage 
+        name={spawnFlashName} 
+        onComplete={() => setSpawnFlashName(null)} 
+      />
+      
       {selectedTile && selectedTool === 'select' && !isMobile && (
         <TileInfoPanel
           tile={grid[selectedTile.y][selectedTile.x]}
@@ -3423,7 +3466,11 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
                 {/* Name */}
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-semibold text-card-foreground truncate">
-                    {hoveredPedestrian.ped.name}
+                    {hoveredPedestrian.ped.userId
+                      ? hoveredPedestrian.ped.name
+                      : hoveredPedestrian.ped.name === 'name'
+                        ? 'Pedestrian'
+                        : hoveredPedestrian.ped.name}
                   </div>
                   <div className="text-xs text-muted-foreground mt-0.5">
                     Pedestrian

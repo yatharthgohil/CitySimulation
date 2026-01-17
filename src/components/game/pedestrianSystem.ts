@@ -225,6 +225,75 @@ export function createPedestrian(
   };
 }
 
+export function createPedestrianFromUser(
+  id: number,
+  userId: string,
+  userProfile: {
+    name: string;
+    skinColor: string;
+    shirtColor: string;
+    pantsColor: string;
+    hasHat: boolean;
+    hatColor: string | null;
+  },
+  homeX: number,
+  homeY: number,
+  destX: number,
+  destY: number,
+  destType: PedestrianDestType,
+  path: { x: number; y: number }[],
+  startIndex: number,
+  direction: CarDirection
+): Pedestrian {
+  const startTile = path[startIndex];
+  
+  return {
+    id,
+    tileX: startTile.x,
+    tileY: startTile.y,
+    direction,
+    progress: 0.5,
+    speed: 0.12 + Math.random() * 0.08,
+    age: 0,
+    maxAge: Infinity,
+    skinColor: userProfile.skinColor,
+    shirtColor: userProfile.shirtColor,
+    pantsColor: userProfile.pantsColor,
+    hasHat: userProfile.hasHat,
+    hatColor: userProfile.hatColor || '#000000',
+    walkOffset: Math.random() * Math.PI * 2,
+    sidewalkSide: Math.random() < 0.5 ? 'left' : 'right',
+    destType,
+    homeX,
+    homeY,
+    destX,
+    destY,
+    returningHome: false,
+    path,
+    pathIndex: startIndex,
+    state: 'spawning',
+    activity: 'none',
+    activityProgress: 0,
+    activityDuration: 15,
+    buildingEntryProgress: 0,
+    socialTarget: null,
+    activityOffsetX: 0,
+    activityOffsetY: 0,
+    activityAnimTimer: Math.random() * Math.PI * 2,
+    hasBall: false,
+    hasDog: false,
+    hasBag: false,
+    hasBeachMat: false,
+    matColor: PEDESTRIAN_MAT_COLORS[Math.floor(Math.random() * PEDESTRIAN_MAT_COLORS.length)],
+    beachTileX: -1,
+    beachTileY: -1,
+    beachEdge: null,
+    name: userProfile.name,
+    userId,
+    spawnProgress: 0,
+  };
+}
+
 /**
  * Determine what should happen when pedestrian arrives at destination
  */
@@ -296,6 +365,9 @@ export function updatePedestrianState(
   ped.activityAnimTimer += delta * 4;
   
   switch (ped.state) {
+    case 'spawning':
+      return updateSpawningState(ped, delta);
+    
     case 'walking':
       return updateWalkingState(ped, delta, speedMultiplier, grid, gridSize, allPedestrians);
     
@@ -323,6 +395,18 @@ export function updatePedestrianState(
     default:
       return true;
   }
+}
+
+function updateSpawningState(ped: Pedestrian, delta: number): boolean {
+  if (ped.spawnProgress === undefined) {
+    ped.spawnProgress = 0;
+  }
+  ped.spawnProgress += delta / ped.activityDuration;
+  if (ped.spawnProgress >= 1) {
+    ped.state = 'walking';
+    ped.spawnProgress = undefined;
+  }
+  return true;
 }
 
 /**
@@ -382,7 +466,10 @@ function updateWalkingState(
   
   // Check if on road (skip if we recently checked - once per tile is enough)
   if (ped.progress < 0.1 && !isRoadTile(grid, gridSize, ped.tileX, ped.tileY)) {
-    return false;
+    // Allow user characters to step off a non-road spawn tile onto the first road
+    if (!ped.userId || ped.pathIndex > 0) {
+      return false;
+    }
   }
   
   // Move along path

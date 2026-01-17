@@ -1,11 +1,10 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
-import { PEDESTRIAN_SKIN_COLORS, PEDESTRIAN_SHIRT_COLORS, PEDESTRIAN_PANTS_COLORS, PEDESTRIAN_HAT_COLORS } from '@/components/game/constants';
 
 // Helper function to shuffle array randomly
 const shuffleArray = <T,>(array: T[]): T[] => {
@@ -17,12 +16,10 @@ const shuffleArray = <T,>(array: T[]): T[] => {
   return shuffled;
 };
 
-// User Profile Type
 interface UserProfile {
   id: string;
   name: string;
   gender: 'male' | 'female';
-  avatar: string; // Not used - we render with canvas
   skinColor: string;
   shirtColor: string;
   pantsColor: string;
@@ -33,66 +30,6 @@ interface UserProfile {
   compatibilityInsight: string;
 }
 
-// WWE Character Names - Mix of male and female
-const WWE_CHARACTERS: Omit<UserProfile, 'id' | 'avatar' | 'skinColor' | 'shirtColor' | 'pantsColor' | 'hasHat' | 'hatColor' | 'relationshipArc' | 'dateSummary' | 'compatibilityInsight'>[] = [
-  { name: 'John Cena', gender: 'male' },
-  { name: 'The Rock', gender: 'male' },
-  { name: 'Stone Cold Steve Austin', gender: 'male' },
-  { name: 'Triple H', gender: 'male' },
-  { name: 'The Undertaker', gender: 'male' },
-  { name: 'Randy Orton', gender: 'male' },
-  { name: 'Brock Lesnar', gender: 'male' },
-  { name: 'Roman Reigns', gender: 'male' },
-  { name: 'Seth Rollins', gender: 'male' },
-  { name: 'AJ Styles', gender: 'male' },
-  { name: 'Edge', gender: 'male' },
-  { name: 'Rey Mysterio', gender: 'male' },
-  { name: 'Becky Lynch', gender: 'female' },
-  { name: 'Charlotte Flair', gender: 'female' },
-  { name: 'Sasha Banks', gender: 'female' },
-  { name: 'Bayley', gender: 'female' },
-  { name: 'Rhea Ripley', gender: 'female' },
-  { name: 'Bianca Belair', gender: 'female' },
-  { name: 'Asuka', gender: 'female' },
-  { name: 'Alexa Bliss', gender: 'female' },
-  { name: 'Liv Morgan', gender: 'female' },
-  { name: 'Ronda Rousey', gender: 'female' },
-  { name: 'Shayna Baszler', gender: 'female' },
-  { name: 'Drew McIntyre', gender: 'male' },
-  { name: 'Bobby Lashley', gender: 'male' },
-  { name: 'Kevin Owens', gender: 'male' },
-  { name: 'Samoa Joe', gender: 'male' },
-  { name: 'Finn Bálor', gender: 'male' },
-  { name: 'Shinsuke Nakamura', gender: 'male' },
-];
-
-// Generate user profiles with placeholder data
-const generateUserProfiles = (): UserProfile[] => {
-  return WWE_CHARACTERS.map((character, index) => {
-    // Generate consistent colors based on character name hash
-    const nameHash = character.name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    const skinColor = PEDESTRIAN_SKIN_COLORS[nameHash % PEDESTRIAN_SKIN_COLORS.length];
-    const shirtColor = PEDESTRIAN_SHIRT_COLORS[nameHash % PEDESTRIAN_SHIRT_COLORS.length];
-    const pantsColor = PEDESTRIAN_PANTS_COLORS[nameHash % PEDESTRIAN_PANTS_COLORS.length];
-    const hasHat = (nameHash % 3) === 0;
-    const hatColor = hasHat ? PEDESTRIAN_HAT_COLORS[nameHash % PEDESTRIAN_HAT_COLORS.length] : null;
-    
-    return {
-      id: `user-${index + 1}`,
-      name: character.name,
-      gender: character.gender,
-      avatar: '', // Will use canvas rendering instead
-      skinColor,
-      shirtColor,
-      pantsColor,
-      hasHat,
-      hatColor,
-      relationshipArc: 'Coming soon...',
-      dateSummary: 'No dates recorded yet.',
-      compatibilityInsight: 'Analysis pending...',
-    };
-  });
-};
 
 // Simple pixelated avatar component
 function PixelatedAvatar({ profile, size = 80 }: { profile: UserProfile; size?: number }) {
@@ -203,10 +140,55 @@ function ProfileAvatar({ profile }: { profile: UserProfile }) {
 
 export function ThirdTabPanel() {
   const [selectedProfile, setSelectedProfile] = useState<UserProfile | null>(null);
+  const [profiles, setProfiles] = useState<UserProfile[]>([]);
   
-  // Generate profiles and shuffle them randomly
-  const profiles = useMemo(() => {
-    return shuffleArray(generateUserProfiles());
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const response = await fetch('/api/users/active');
+        if (response.ok) {
+          const users = await response.json();
+          setProfiles(shuffleArray(users.map((user: any) => ({
+            ...user,
+            relationshipArc: user.relationshipArc || 'Coming soon...',
+            dateSummary: user.dateSummary || 'No dates recorded yet.',
+            compatibilityInsight: user.compatibilityInsight || 'Analysis pending...',
+          }))));
+        }
+      } catch (error) {
+        console.error('Error fetching users:', error);
+      }
+    };
+
+    fetchUsers();
+
+    const eventSource = new EventSource('/api/users/stream');
+    
+    eventSource.onmessage = async (event) => {
+      if (event.data === 'keepalive') return;
+      try {
+        const newUser = JSON.parse(event.data);
+        setProfiles(prev => {
+          if (prev.some(u => u.id === newUser.id)) return prev;
+          return shuffleArray([...prev, {
+            ...newUser,
+            relationshipArc: newUser.relationshipArc || 'Coming soon...',
+            dateSummary: newUser.dateSummary || 'No dates recorded yet.',
+            compatibilityInsight: newUser.compatibilityInsight || 'Analysis pending...',
+          }]);
+        });
+      } catch (error) {
+        console.error('Error processing SSE event:', error);
+      }
+    };
+
+    eventSource.onerror = () => {
+      eventSource.close();
+    };
+
+    return () => {
+      eventSource.close();
+    };
   }, []);
 
   return (

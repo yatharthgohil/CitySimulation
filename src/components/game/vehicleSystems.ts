@@ -984,15 +984,16 @@ export function useVehicleSystems(
     
     // Clear pedestrians if zoomed out too far (use mobile threshold on mobile for better perf)
     // Also use far zoom threshold for desktop when very zoomed out (for large maps)
+    // BUT preserve user characters (those with userId)
     const pedestrianMinZoom = isMobile ? PEDESTRIAN_MIN_ZOOM_MOBILE : PEDESTRIAN_MIN_ZOOM;
     const effectiveMinZoom = Math.max(pedestrianMinZoom, VEHICLE_FAR_ZOOM_THRESHOLD);
     if (currentZoom < effectiveMinZoom) {
-      pedestriansRef.current = [];
+      pedestriansRef.current = pedestriansRef.current.filter(p => p.userId);
       return;
     }
     
     if (!currentGrid || currentGridSize <= 0) {
-      pedestriansRef.current = [];
+      pedestriansRef.current = pedestriansRef.current.filter(p => p.userId);
       return;
     }
     

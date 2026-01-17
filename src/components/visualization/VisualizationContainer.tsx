@@ -35,7 +35,7 @@ export function VisualizationContainer({ children }: VisualizationContainerProps
                 value="chat"
                 className="rounded-t-lg rounded-b-none border-2 border-b-0 border-l-0 border-border bg-muted/30 data-[state=active]:bg-card data-[state=active]:border-b-2 data-[state=active]:border-b-card data-[state=active]:mb-[-2px] data-[state=active]:shadow-none px-4 py-2 relative z-10"
               >
-                Chat
+                Live Activity
               </TabsTrigger>
               <TabsTrigger 
                 value="third"
