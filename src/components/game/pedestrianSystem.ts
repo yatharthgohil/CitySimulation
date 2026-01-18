@@ -274,7 +274,7 @@ export function createPedestrianFromUser(
     state: 'spawning',
     activity: 'none',
     activityProgress: 0,
-    activityDuration: 15,
+    activityDuration: 3,
     buildingEntryProgress: 0,
     socialTarget: null,
     activityOffsetX: 0,

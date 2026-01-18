@@ -305,7 +305,7 @@ export function drawPedestrians(
 
 function drawSpawnIndicator(ctx: CanvasRenderingContext2D, ped: Pedestrian, zoom: number): void {
   const progress = ped.spawnProgress ?? 0;
-  const fadeStart = 0.7;
+  const fadeStart = 0.5;
   let alpha = 1;
   if (progress > fadeStart) {
     alpha = 1 - (progress - fadeStart) / (1 - fadeStart);

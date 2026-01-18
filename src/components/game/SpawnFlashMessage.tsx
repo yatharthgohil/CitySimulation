@@ -17,11 +17,11 @@ export function SpawnFlashMessage({ name, onComplete }: SpawnFlashMessageProps) 
       setFadeOut(false);
       const fadeTimer = setTimeout(() => {
         setFadeOut(true);
-      }, 2500);
+      }, 1500);
       const hideTimer = setTimeout(() => {
         setVisible(false);
         onComplete();
-      }, 3500);
+      }, 2500);
       return () => {
         clearTimeout(fadeTimer);
         clearTimeout(hideTimer);
