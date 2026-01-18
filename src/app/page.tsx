@@ -9,6 +9,7 @@ import { useMobile } from '@/hooks/useMobile';
 import { getSpritePack, getSpriteCoords, DEFAULT_SPRITE_PACK_ID } from '@/lib/renderConfig';
 import { SavedCityMeta, GameState } from '@/types/game';
 import { decompressFromUTF16, compressToUTF16 } from 'lz-string';
+import { AnimatedSignBackground } from '@/components/landing/AnimatedSignBackground';
 
 const STORAGE_KEY = 'isocity-game-state';
 const SAVED_CITIES_INDEX_KEY = 'isocity-saved-cities-index';
@@ -468,19 +469,15 @@ export default function HomePage() {
   if (isMobile) {
     return (
       <MultiplayerContextProvider>
-        <main className="h-[100dvh] max-h-[100dvh] bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center px-4">
-          <div className="flex flex-col items-center justify-center space-y-12">
-            {/* Title */}
-            <h1 className="text-4xl sm:text-5xl font-light tracking-wider text-white/90">
-              Dating Fiction
-            </h1>
-            
-            {/* Single Enter Button */}
+        <main className="relative h-[100dvh] max-h-[100dvh] overflow-hidden">
+          <AnimatedSignBackground />
+          {/* Button in bottom right corner */}
+          <div className="absolute bottom-4 right-4 z-10">
             <Button 
               onClick={() => setShowGame(true)}
-              className="w-64 py-8 text-2xl font-light tracking-wide bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-none transition-all duration-300"
+              className="futuristic-pixel-button"
             >
-              Enter Turing City
+              Enter Dating Simulation
             </Button>
           </div>
         </main>
@@ -491,19 +488,15 @@ export default function HomePage() {
   // Desktop landing page
   return (
     <MultiplayerContextProvider>
-      <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center p-8">
-        <div className="flex flex-col items-center justify-center space-y-12">
-          {/* Title */}
-          <h1 className="text-8xl font-light tracking-wider text-white/90">
-            Dating Fiction
-          </h1>
-          
-          {/* Single Enter Button */}
+      <main className="relative min-h-screen overflow-hidden">
+        <AnimatedSignBackground />
+        {/* Button in bottom right corner */}
+        <div className="absolute bottom-8 right-8 z-10">
           <Button 
             onClick={() => setShowGame(true)}
-            className="w-64 py-8 text-2xl font-light tracking-wide bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-none transition-all duration-300"
+            className="futuristic-pixel-button"
           >
-            Enter Turing City
+            Enter Dating Simulation
           </Button>
         </div>
       </main>

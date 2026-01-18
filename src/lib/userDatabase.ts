@@ -19,6 +19,28 @@ export interface UserProfile {
   dateSummary: string;
   compatibilityInsight: string;
   createdAt: string;
+  // Photo analysis data
+  photoAnalysis?: {
+    iosSummary?: {
+      traits: string[];
+      personality: string;
+      interests: string[];
+      characteristics: string;
+    };
+    visualAnalysis?: {
+      detectedInterests: string[];
+      personalityHints: string[];
+      lifestyleIndicators: string[];
+      visualStyle: string;
+      activitySignals: string[];
+      socialContext: string;
+      confidence: number;
+    };
+    enhancedPreferences?: string;
+    combinedTraits?: string[];
+    personalityDepth?: string;
+    compatibilitySignals?: string[];
+  };
 }
 
 const RACE_SKIN_TONE_MAP: Record<string, string[]> = {
@@ -116,5 +138,40 @@ export async function getAllUsers(): Promise<UserProfile[]> {
 export async function getUserById(id: string): Promise<UserProfile | null> {
   const users = await readDatabase();
   return users.find(u => u.id === id) || null;
+}
+
+/**
+ * Update user with photo analysis data
+ */
+export async function updateUserWithPhotoAnalysis(
+  userId: string,
+  deepProfile: import('@/lib/dating/photoAnalysis').DeepCharacterProfile
+): Promise<UserProfile> {
+  const users = await readDatabase();
+  const userIndex = users.findIndex(u => u.id === userId);
+  
+  if (userIndex === -1) {
+    throw new Error(`User with id ${userId} not found`);
+  }
+
+  const user = users[userIndex];
+  
+  // Update user with photo analysis
+  user.photoAnalysis = {
+    iosSummary: deepProfile.iosSummary,
+    visualAnalysis: deepProfile.visualAnalysis,
+    enhancedPreferences: deepProfile.enhancedPreferences,
+    combinedTraits: deepProfile.combinedTraits,
+    personalityDepth: deepProfile.personalityDepth,
+    compatibilitySignals: deepProfile.compatibilitySignals,
+  };
+
+  // Update preferences if enhanced preferences are available
+  if (deepProfile.enhancedPreferences) {
+    user.preferences = deepProfile.enhancedPreferences;
+  }
+
+  await writeDatabase(users);
+  return user;
 }
 
