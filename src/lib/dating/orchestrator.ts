@@ -29,14 +29,55 @@ export interface DateSession {
 
 export const datingEventBus = new EventEmitter();
 
+const CHAT_MODELS = [
+  'openai/gpt-4o-mini',
+  'openai/gpt-4o',
+  'anthropic/claude-3-haiku',
+  'anthropic/claude-3-5-sonnet',
+  'google/gemini-2.0-flash-001',
+  'google/gemini-flash-1.5',
+  'meta-llama/llama-3.3-70b-instruct',
+  'mistralai/mistral-small-24b-instruct-2501',
+  'qwen/qwen-2.5-72b-instruct',
+  'deepseek/deepseek-chat',
+];
+
 export class DateOrchestrator {
   private activeDates: Map<string, DateSession> = new Map();
   private dateQueue: DateSession[] = [];
   private completedDates: Map<string, DateSession> = new Map();
   private anthropicClient: Anthropic | null = null;
   private openRouterApiKey: string = '';
-  private openRouterModel: string = 'anthropic/claude-3-haiku';
   private logDir = path.join(process.cwd(), 'logs', 'dating');
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  private pruneExpiredActiveDates(): void {
+    const now = Date.now();
+    for (const [id, dateSession] of this.activeDates.entries()) {
+      if (dateSession.status === 'summarizing') continue;
+      if (dateSession.endTime.getTime() > now) continue;
+      dateSession.status = 'completed';
+      dateSession.conversationHistory = [...dateSession.messages];
+      if (!dateSession.summary) {
+        dateSession.summary = 'Date completed.';
+      }
+      if (!dateSession.sentiment) {
+        dateSession.sentiment = 'Neutral';
+      }
+      if (dateSession.compatibilityRating === undefined) {
+        dateSession.compatibilityRating = 5;
+      }
+      if (dateSession.summary && dateSession.confidence === undefined) {
+        dateSession.confidence = calculateConfidenceFromSummary(dateSession.summary);
+      }
+      this.completedDates.set(id, dateSession);
+      this.activeDates.delete(id);
+      datingEventBus.emit('datesUpdated', { dateId: dateSession.id, status: dateSession.status });
+    }
+  }
 
   // Expose getter for backfilling
   getAllCompletedDates(): DateSession[] {
@@ -60,7 +101,10 @@ export class DateOrchestrator {
 
   private initializeOpenRouter() {
     this.openRouterApiKey = process.env.OPENROUTER_API_KEY || '';
-    this.openRouterModel = process.env.OPENROUTER_MODEL || 'anthropic/claude-3-haiku';
+  }
+
+  private getRandomModel(): string {
+    return CHAT_MODELS[Math.floor(Math.random() * CHAT_MODELS.length)];
   }
 
   scheduleDate(user1: UserProfile, user2: UserProfile, durationMs: number = 120000): DateSession {
@@ -70,14 +114,17 @@ export class DateOrchestrator {
     const systemPrompt1 = generateSystemPrompt(user1);
     const systemPrompt2 = generateSystemPrompt(user2);
 
+    const model1 = this.getRandomModel();
+    const model2 = this.getRandomModel();
+
     const dateSession: DateSession = {
       id: `date-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       user1Id: user1.id,
       user2Id: user2.id,
       user1Name: user1.name,
       user2Name: user2.name,
-      agent1: new DatingAgent(user1, systemPrompt1, this.openRouterApiKey, this.openRouterModel),
-      agent2: new DatingAgent(user2, systemPrompt2, this.openRouterApiKey, this.openRouterModel),
+      agent1: new DatingAgent(user1, systemPrompt1, this.openRouterApiKey, model1),
+      agent2: new DatingAgent(user2, systemPrompt2, this.openRouterApiKey, model2),
       startTime,
       endTime,
       messages: [],
@@ -98,13 +145,18 @@ export class DateOrchestrator {
     this.activeDates.set(dateId, dateSession);
     this.dateQueue = this.dateQueue.filter(d => d.id !== dateId);
 
+    await this.logDateEvent('started', dateSession);
+    datingEventBus.emit('datesUpdated', { dateId: dateSession.id, status: dateSession.status });
+
+    const initialDelayMs = 3000 + Math.floor(Math.random() * 7001);
+    await this.sleep(initialDelayMs);
+
     const openingEntry = this.startStreamingMessage(dateSession, dateSession.user1Id, dateSession.user1Name);
     const openingMessage = await dateSession.agent1.initiateConversation(token => {
       openingEntry.message += token;
     });
     openingEntry.message = openingMessage;
 
-    await this.logDateEvent('started', dateSession);
     await this.logMessageEvent(dateSession, openingEntry);
     datingEventBus.emit('datesUpdated', { dateId: dateSession.id, status: dateSession.status });
 
@@ -130,18 +182,27 @@ export class DateOrchestrator {
           });
           entry.message = response;
           await this.logMessageEvent(dateSession, entry);
+          datingEventBus.emit('datesUpdated', { dateId: dateSession.id, status: dateSession.status });
           lastMessage = response;
 
           [currentAgent, respondingAgent] = [respondingAgent, currentAgent];
           [currentUserId, respondingUserId] = [respondingUserId, currentUserId];
           [currentUserName, respondingUserName] = [respondingUserName, currentUserName];
+
+          if (Date.now() >= dateSession.endTime.getTime() || dateSession.status !== 'active') {
+            break;
+          }
+          const delayMs = 8000 + Math.floor(Math.random() * 7001);
+          await this.sleep(delayMs);
         } catch (error) {
           console.error('Conversation error:', error);
           break;
         }
       }
       
-      if (Date.now() >= dateSession.endTime.getTime()) {
+      if (dateSession.status === 'active') {
+        dateSession.status = 'summarizing';
+        datingEventBus.emit('datesUpdated', { dateId: dateSession.id, status: dateSession.status });
         await this.endDate(dateSession.id);
       }
     };
@@ -173,15 +234,20 @@ export class DateOrchestrator {
     const dateSession = this.activeDates.get(dateId);
     if (!dateSession) return;
 
-    dateSession.status = 'summarizing';
+    if (dateSession.status !== 'summarizing') {
+      dateSession.status = 'summarizing';
+      datingEventBus.emit('datesUpdated', { dateId: dateSession.id, status: dateSession.status });
+    }
     dateSession.conversationHistory = [...dateSession.messages];
 
-    const summaryData = await this.generateClaudeSummary(dateSession);
+    const summaryPromise = this.generateClaudeSummary(dateSession);
+    await this.sleep(10000);
+    
+    const summaryData = await summaryPromise;
     dateSession.summary = summaryData.summary;
     dateSession.sentiment = summaryData.sentiment;
     dateSession.compatibilityRating = summaryData.compatibilityRating;
     
-    // Calculate confidence from summary
     if (dateSession.summary) {
       dateSession.confidence = calculateConfidenceFromSummary(dateSession.summary);
     }
@@ -192,12 +258,14 @@ export class DateOrchestrator {
     this.completedDates.set(dateId, dateSession);
     this.activeDates.delete(dateId);
     
-    // Check for best matches for both users
     const allCompletedDates = Array.from(this.completedDates.values());
     bestMatchDetector.checkAndEmitBestMatches(dateSession.user1Id, allCompletedDates);
     bestMatchDetector.checkAndEmitBestMatches(dateSession.user2Id, allCompletedDates);
     
     datingEventBus.emit('datesUpdated', { dateId: dateSession.id, status: dateSession.status });
+
+    const scheduleDelayMs = 3000 + Math.floor(Math.random() * 2001);
+    await this.sleep(scheduleDelayMs);
   }
 
   private async generateClaudeSummary(dateSession: DateSession): Promise<{ summary: string; sentiment: string; compatibilityRating: number }> {
@@ -428,7 +496,7 @@ export class DateOrchestrator {
           'X-Title': process.env.OPENROUTER_APP_NAME || 'Isometric City Dating'
         },
         body: JSON.stringify({
-          model: this.openRouterModel,
+          model: this.getRandomModel(),
           messages: [
             {
               role: 'user',
@@ -465,6 +533,7 @@ export class DateOrchestrator {
   }
 
   getActiveUserIds(): Set<string> {
+    this.pruneExpiredActiveDates();
     const activeIds = new Set<string>();
     this.activeDates.forEach(date => {
       activeIds.add(date.user1Id);
@@ -478,6 +547,7 @@ export class DateOrchestrator {
   }
 
   getActiveDates(): DateSession[] {
+    this.pruneExpiredActiveDates();
     return Array.from(this.activeDates.values());
   }
 
@@ -490,10 +560,12 @@ export class DateOrchestrator {
   }
 
   getDateById(dateId: string): DateSession | undefined {
+    this.pruneExpiredActiveDates();
     return this.activeDates.get(dateId) || this.dateQueue.find(d => d.id === dateId) || this.completedDates.get(dateId);
   }
 
   getActiveCount(): number {
+    this.pruneExpiredActiveDates();
     return this.activeDates.size;
   }
 

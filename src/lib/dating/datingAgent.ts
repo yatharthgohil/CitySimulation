@@ -35,7 +35,7 @@ export class DatingAgent {
     this.userName = user.name;
     this.systemPrompt = systemPrompt;
     this.apiKey = apiKey || process.env.OPENROUTER_API_KEY || '';
-    this.model = model || process.env.OPENROUTER_MODEL || 'anthropic/claude-3-haiku';
+    this.model = model || process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
     this.conversationHistory.push({ role: 'system', content: systemPrompt });
   }
 

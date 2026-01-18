@@ -7,29 +7,21 @@ interface SpawnFlashMessageProps {
   onComplete: () => void;
 }
 
-export function SpawnFlashMessage({ name, onComplete }: SpawnFlashMessageProps) {
-  const [visible, setVisible] = useState(false);
+function FlashContent({ name, onComplete }: { name: string; onComplete: () => void }) {
   const [fadeOut, setFadeOut] = useState(false);
 
   useEffect(() => {
-    if (name) {
-      setVisible(true);
-      setFadeOut(false);
-      const fadeTimer = setTimeout(() => {
-        setFadeOut(true);
-      }, 1500);
-      const hideTimer = setTimeout(() => {
-        setVisible(false);
-        onComplete();
-      }, 2500);
-      return () => {
-        clearTimeout(fadeTimer);
-        clearTimeout(hideTimer);
-      };
-    }
-  }, [name, onComplete]);
-
-  if (!visible || !name) return null;
+    const fadeTimer = setTimeout(() => {
+      setFadeOut(true);
+    }, 1500);
+    const hideTimer = setTimeout(() => {
+      onComplete();
+    }, 2500);
+    return () => {
+      clearTimeout(fadeTimer);
+      clearTimeout(hideTimer);
+    };
+  }, [onComplete]);
 
   return (
     <div
@@ -42,5 +34,10 @@ export function SpawnFlashMessage({ name, onComplete }: SpawnFlashMessageProps) 
       </div>
     </div>
   );
+}
+
+export function SpawnFlashMessage({ name, onComplete }: SpawnFlashMessageProps) {
+  if (!name) return null;
+  return <FlashContent key={name} name={name} onComplete={onComplete} />;
 }
 

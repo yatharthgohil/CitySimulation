@@ -119,28 +119,16 @@ export function ChatPanel() {
   const [activeDates, setActiveDates] = useState<DateSession[]>([]);
   const initRef = useRef(false);
 
-  useEffect(() => {
-    fetch('/api/dating', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'resume' })
-    });
-    return () => {
-      fetch('/api/dating', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'pause' })
-      });
-    };
-  }, []);
-
   const fetchData = useCallback(async () => {
     try {
       const response = await fetch('/api/dating?action=active');
       const data = await response.json();
-      setActiveDates(data.dates || []);
+      const visibleDates = (data.dates || []).filter((date: DateSession) => date.status === 'active' || date.status === 'summarizing');
+      setActiveDates(visibleDates);
+      return visibleDates.filter((d: DateSession) => d.status === 'active').length;
     } catch (error) {
       console.error('Failed to fetch dating data:', error);
+      return 0;
     }
   }, []);
 
@@ -160,35 +148,55 @@ export function ChatPanel() {
   }, [fetchData]);
 
   useEffect(() => {
+    fetch('/api/dating', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'resume' })
+    });
+    fetchData();
+    return () => {
+      fetch('/api/dating', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'pause' })
+      });
+    };
+  }, [fetchData]);
+
+  useEffect(() => {
     const id = setTimeout(() => initializeAutoSchedule(), 0);
     return () => clearTimeout(id);
   }, [initializeAutoSchedule]);
 
   useEffect(() => {
     const eventSource = new EventSource('/api/dating/stream');
-    eventSource.onmessage = (event) => {
+    eventSource.onmessage = async (event) => {
       if (event.data === 'keepalive') return;
       try {
         const payload = JSON.parse(event.data);
+        if (payload.type === 'connected') {
+          await fetchData();
+        }
         if (payload.type === 'datesUpdated') {
-          fetchData();
-          if (activeDates.length < 3) {
-            fetch('/api/dating', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+          const activeCount = await fetchData();
+          if (activeCount < 3) {
+            await fetch('/api/dating', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ action: 'autoSchedule', maxDates: 3 })
             });
+            await fetchData();
           }
         }
       } catch {
-        fetchData();
+        await fetchData();
       }
     };
     eventSource.onerror = () => {
       eventSource.close();
     };
     return () => eventSource.close();
-  }, [activeDates.length, fetchData]);
+  }, [fetchData]);
 
   return (
     <div className="w-full p-6">

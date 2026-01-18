@@ -88,7 +88,8 @@ class DatingService {
 
     if (!maleCandidate || !femaleCandidate) return null;
 
-    const dateSession = this.orchestrator.scheduleDate(maleCandidate, femaleCandidate, this.dateDurationMs);
+    const randomDurationMs = 60000 + Math.floor(Math.random() * 120001);
+    const dateSession = this.orchestrator.scheduleDate(maleCandidate, femaleCandidate, randomDurationMs);
     return dateSession;
   }
 
