@@ -10,6 +10,7 @@ class DatingService {
   private femaleIndex: number = 0;
   private dateDurationMs: number = 120000;
   private isScheduling: boolean = false;
+  private isPaused: boolean = true;
 
   constructor() {
     this.orchestrator = new DateOrchestrator();
@@ -79,7 +80,7 @@ class DatingService {
   }
 
   async autoScheduleAndStart(maxDates: number = 3): Promise<DateSession[]> {
-    if (this.isScheduling) return [];
+    if (this.isScheduling || this.isPaused) return [];
     this.isScheduling = true;
 
     try {
@@ -107,6 +108,14 @@ class DatingService {
     }
   }
 
+  pauseScheduling() {
+    this.isPaused = true;
+  }
+
+  resumeScheduling() {
+    this.isPaused = false;
+  }
+
   async startDate(dateId: string) {
     return this.orchestrator.startDate(dateId);
   }
@@ -125,6 +134,12 @@ class DatingService {
 
   getCompletedDates() {
     return this.orchestrator.getCompletedDates();
+  }
+
+  getDatesForUser(userId: string) {
+    const completed = this.orchestrator.getCompletedDates().filter(date => date.user1Id === userId || date.user2Id === userId);
+    const active = this.orchestrator.getActiveDates().filter(date => date.user1Id === userId || date.user2Id === userId);
+    return [...active, ...completed];
   }
 
   getDateById(dateId: string) {

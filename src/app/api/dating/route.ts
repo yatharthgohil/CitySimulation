@@ -5,6 +5,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action');
   const dateId = searchParams.get('dateId');
+  const userId = searchParams.get('userId');
 
   switch (action) {
     case 'active':
@@ -22,6 +23,10 @@ export async function GET(request: NextRequest) {
       return date 
         ? NextResponse.json({ date })
         : NextResponse.json({ error: 'Date not found' }, { status: 404 });
+    
+    case 'userDates':
+      if (!userId) return NextResponse.json({ error: 'userId required' }, { status: 400 });
+      return NextResponse.json({ dates: datingService.getDatesForUser(userId) });
     
     case 'users':
       return NextResponse.json({ users: datingService.getUsers() });
@@ -44,6 +49,14 @@ export async function POST(request: NextRequest) {
       case 'autoSchedule':
         const scheduled = await datingService.autoScheduleAndStart(maxDates || 3);
         return NextResponse.json({ scheduled, activeCount: datingService.getActiveCount() });
+      
+      case 'pause':
+        datingService.pauseScheduling();
+        return NextResponse.json({ success: true });
+      
+      case 'resume':
+        datingService.resumeScheduling();
+        return NextResponse.json({ success: true });
       
       case 'start':
         if (!dateId) return NextResponse.json({ error: 'dateId required' }, { status: 400 });

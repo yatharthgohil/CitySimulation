@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -25,9 +25,31 @@ interface UserProfile {
   pantsColor: string;
   hasHat: boolean;
   hatColor: string | null;
-  relationshipArc: string;
-  dateSummary: string;
   compatibilityInsight: string;
+}
+
+interface DateMessage {
+  sender: string;
+  senderName: string;
+  message: string;
+  timestamp: string;
+}
+
+interface UserDate {
+  id: string;
+  user1Id: string;
+  user2Id: string;
+  user1Name: string;
+  user2Name: string;
+  startTime: string;
+  endTime: string;
+  status: 'scheduled' | 'active' | 'summarizing' | 'completed';
+  summary?: string;
+  sentiment?: string;
+  compatibilityRating?: number;
+  conversationHistory?: DateMessage[];
+  messages?: DateMessage[];
+  isMock?: boolean;
 }
 
 
@@ -141,6 +163,8 @@ function ProfileAvatar({ profile }: { profile: UserProfile }) {
 export function ThirdTabPanel() {
   const [selectedProfile, setSelectedProfile] = useState<UserProfile | null>(null);
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  const [userDates, setUserDates] = useState<UserDate[]>([]);
+  const [selectedDate, setSelectedDate] = useState<UserDate | null>(null);
   
   useEffect(() => {
     const fetchUsers = async () => {
@@ -150,8 +174,6 @@ export function ThirdTabPanel() {
           const users = await response.json();
           setProfiles(shuffleArray(users.map((user: any) => ({
             ...user,
-            relationshipArc: user.relationshipArc || 'Coming soon...',
-            dateSummary: user.dateSummary || 'No dates recorded yet.',
             compatibilityInsight: user.compatibilityInsight || 'Analysis pending...',
           }))));
         }
@@ -172,8 +194,6 @@ export function ThirdTabPanel() {
           if (prev.some(u => u.id === newUser.id)) return prev;
           return shuffleArray([...prev, {
             ...newUser,
-            relationshipArc: newUser.relationshipArc || 'Coming soon...',
-            dateSummary: newUser.dateSummary || 'No dates recorded yet.',
             compatibilityInsight: newUser.compatibilityInsight || 'Analysis pending...',
           }]);
         });
@@ -190,6 +210,72 @@ export function ThirdTabPanel() {
       eventSource.close();
     };
   }, []);
+
+  useEffect(() => {
+    if (!selectedProfile) return;
+    const fetchDates = async () => {
+      try {
+        const response = await fetch(`/api/dating?action=userDates&userId=${selectedProfile.id}`);
+        const data = await response.json();
+        setUserDates(data.dates || []);
+      } catch (error) {
+        setUserDates([]);
+      }
+    };
+    fetchDates();
+    const eventSource = new EventSource('/api/dating/stream');
+    eventSource.onmessage = (event) => {
+      if (event.data === 'keepalive') return;
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === 'datesUpdated') {
+          fetchDates();
+        }
+      } catch (error) {
+        fetchDates();
+      }
+    };
+    eventSource.onerror = () => {
+      eventSource.close();
+    };
+    return () => eventSource.close();
+  }, [selectedProfile]);
+
+  const timelineDates = useMemo(() => {
+    if (userDates.length === 0) return [];
+    const sorted = [...userDates].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+    const active = sorted.filter(date => date.status === 'active');
+    const rest = sorted.filter(date => date.status !== 'active');
+    return [...rest, ...active];
+  }, [userDates]);
+
+  const getOtherName = (date: UserDate) => {
+    if (!selectedProfile) return '';
+    return date.user1Id === selectedProfile.id ? date.user2Name : date.user1Name;
+  };
+
+  const getDurationText = (date: UserDate) => {
+    const start = new Date(date.startTime).getTime();
+    const end = new Date(date.endTime).getTime();
+    const durationMs = Math.max(0, end - start);
+    const minutes = Math.max(1, Math.round(durationMs / 60000));
+    return `${minutes} min`;
+  };
+
+  const getDateTimeText = (date: UserDate) => {
+    const start = new Date(date.startTime);
+    return `${start.toLocaleDateString()} ${start.toLocaleTimeString()}`;
+  };
+
+  const getChatMessages = (date: UserDate) => {
+    return date.conversationHistory || date.messages || [];
+  };
+
+  const openChat = (date: UserDate) => {
+    setSelectedDate(date);
+  };
+
+  const closeChat = () => setSelectedDate(null);
 
   return (
     <div className="w-full h-full flex flex-col relative">
@@ -231,15 +317,46 @@ export function ThirdTabPanel() {
 
               <div className="space-y-6 mt-6">
                 <div>
-                  <h3 className="font-semibold text-lg mb-2">Relationship Arc</h3>
-                  <p className="text-sm text-muted-foreground">{selectedProfile.relationshipArc}</p>
-                </div>
-
-                <Separator />
-
-                <div>
-                  <h3 className="font-semibold text-lg mb-2">Date Summary</h3>
-                  <p className="text-sm text-muted-foreground">{selectedProfile.dateSummary}</p>
+                  <h3 className="font-semibold text-lg mb-2">Events Timeline</h3>
+                  <div className="relative h-20">
+                    <div className="absolute left-0 right-0 top-1/2 h-0.5 bg-border" />
+                    <div className="absolute inset-0">
+                      {timelineDates.map((date, index) => {
+                        const left = timelineDates.length === 1 ? 50 : (index / (timelineDates.length - 1)) * 100;
+                        const isActive = date.status === 'active';
+                        return (
+                          <button
+                            key={date.id}
+                            type="button"
+                            onClick={() => openChat(date)}
+                            className="absolute top-1/2 -translate-y-1/2 group"
+                            style={{ left: `${left}%` }}
+                          >
+                            <span
+                              className={`w-3 h-3 rounded-full block ${
+                                isActive ? 'bg-green-500 animate-pulse' : 'bg-primary/60'
+                              }`}
+                            />
+                            <div className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity absolute -top-20 left-1/2 -translate-x-1/2 bg-card border border-border rounded-md shadow-md px-3 py-2 text-xs text-foreground whitespace-nowrap">
+                              {isActive ? (
+                                <div className="text-green-600">Currently on a date</div>
+                              ) : (
+                                <>
+                                  <div>{getOtherName(date)}</div>
+                                  <div>{getDateTimeText(date)}</div>
+                                  <div>{getDurationText(date)}</div>
+                                  <div>{date.sentiment || 'Neutral'}</div>
+                                </>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {timelineDates.length === 0 && (
+                    <div className="text-sm text-muted-foreground">No dates yet</div>
+                  )}
                 </div>
 
                 <Separator />
@@ -248,6 +365,46 @@ export function ThirdTabPanel() {
                   <h3 className="font-semibold text-lg mb-2">Compatibility Insight</h3>
                   <p className="text-sm text-muted-foreground">{selectedProfile.compatibilityInsight}</p>
                 </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!selectedDate} onOpenChange={(open) => !open && closeChat()}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          {selectedDate && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-xl">{selectedProfile?.name} × {getOtherName(selectedDate)}</DialogTitle>
+                <DialogDescription>
+                  {selectedDate.status === 'active' ? 'Live date' : 'Past date'}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="mt-4 border rounded-lg bg-muted/20">
+                <ScrollArea className="h-80 p-3">
+                  <div className="space-y-3">
+                    {getChatMessages(selectedDate).map((msg, idx) => {
+                      const isUser1 = msg.sender === selectedDate.user1Id;
+                      return (
+                        <div key={idx} className={`flex ${isUser1 ? 'justify-start' : 'justify-end'}`}>
+                          <div className={`max-w-[80%] rounded-2xl px-3 py-2 ${
+                            isUser1 
+                              ? 'bg-primary/10 border border-primary/20 rounded-tl-sm' 
+                              : 'bg-secondary border border-secondary/50 rounded-tr-sm'
+                          }`}>
+                            <div className="text-[10px] font-medium text-muted-foreground mb-0.5">
+                              {msg.senderName}
+                            </div>
+                            <div className="text-sm leading-relaxed">{msg.message}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {getChatMessages(selectedDate).length === 0 && (
+                      <div className="text-sm text-muted-foreground text-center py-8">No chat history yet</div>
+                    )}
+                  </div>
+                </ScrollArea>
               </div>
             </>
           )}

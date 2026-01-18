@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface DateMessage {
   sender: string;
@@ -34,22 +33,20 @@ function DateCard({ date }: { date: DateSession }) {
     prevMessageCount.current = date.messages.length;
   }, [date.messages.length]);
 
-  const getTimeRemaining = () => {
-    const endTime = new Date(date.endTime).getTime();
-    const now = Date.now();
-    const remaining = Math.max(0, Math.ceil((endTime - now) / 1000));
-    const minutes = Math.floor(remaining / 60);
-    const seconds = remaining % 60;
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
-
-  const [timeRemaining, setTimeRemaining] = useState(getTimeRemaining());
+  const [timeRemaining, setTimeRemaining] = useState('0:00');
 
   useEffect(() => {
+    const endTime = new Date(date.endTime).getTime();
+    const updateRemaining = () => {
+      const now = Date.now();
+      const remaining = Math.max(0, Math.ceil((endTime - now) / 1000));
+      const minutes = Math.floor(remaining / 60);
+      const seconds = remaining % 60;
+      setTimeRemaining(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+    };
+    updateRemaining();
     if (date.status !== 'active') return;
-    const interval = setInterval(() => {
-      setTimeRemaining(getTimeRemaining());
-    }, 1000);
+    const interval = setInterval(updateRemaining, 1000);
     return () => clearInterval(interval);
   }, [date.status, date.endTime]);
 
@@ -120,7 +117,22 @@ function DateCard({ date }: { date: DateSession }) {
 
 export function ChatPanel() {
   const [activeDates, setActiveDates] = useState<DateSession[]>([]);
-  const [isInitialized, setIsInitialized] = useState(false);
+  const initRef = useRef(false);
+
+  useEffect(() => {
+    fetch('/api/dating', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'resume' })
+    });
+    return () => {
+      fetch('/api/dating', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'pause' })
+      });
+    };
+  }, []);
 
   const fetchData = useCallback(async () => {
     try {
@@ -133,9 +145,8 @@ export function ChatPanel() {
   }, []);
 
   const initializeAutoSchedule = useCallback(async () => {
-    if (isInitialized) return;
-    setIsInitialized(true);
-    
+    if (initRef.current) return;
+    initRef.current = true;
     try {
       await fetch('/api/dating', {
         method: 'POST',
@@ -146,34 +157,41 @@ export function ChatPanel() {
     } catch (error) {
       console.error('Failed to auto-schedule:', error);
     }
-  }, [isInitialized, fetchData]);
+  }, [fetchData]);
 
   useEffect(() => {
-    initializeAutoSchedule();
+    const id = setTimeout(() => initializeAutoSchedule(), 0);
+    return () => clearTimeout(id);
   }, [initializeAutoSchedule]);
 
   useEffect(() => {
-    const interval = setInterval(async () => {
-      await fetchData();
-      
-      if (activeDates.length < 3) {
-        try {
-          await fetch('/api/dating', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'autoSchedule', maxDates: 3 })
-          });
-        } catch (error) {
-          console.error('Failed to auto-schedule:', error);
+    const eventSource = new EventSource('/api/dating/stream');
+    eventSource.onmessage = (event) => {
+      if (event.data === 'keepalive') return;
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === 'datesUpdated') {
+          fetchData();
+          if (activeDates.length < 3) {
+            fetch('/api/dating', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'autoSchedule', maxDates: 3 })
+            });
+          }
         }
+      } catch {
+        fetchData();
       }
-    }, 2000);
-    
-    return () => clearInterval(interval);
+    };
+    eventSource.onerror = () => {
+      eventSource.close();
+    };
+    return () => eventSource.close();
   }, [activeDates.length, fetchData]);
 
   return (
-    <div className="w-full h-full flex flex-col p-6">
+    <div className="w-full p-6">
       <div className="mb-4">
         <h2 className="text-2xl font-bold mb-1">💫 Live Activity</h2>
         <p className="text-sm text-muted-foreground">
@@ -181,24 +199,22 @@ export function ChatPanel() {
         </p>
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="flex flex-col gap-4 pr-4">
-          {activeDates.slice(0, 3).map((date) => (
-            <div key={date.id} className="h-[300px]">
-              <DateCard date={date} />
+      <div className="flex flex-col gap-4 pb-4">
+        {activeDates.slice(0, 3).map((date) => (
+          <div key={date.id} className="h-[300px]">
+            <DateCard date={date} />
+          </div>
+        ))}
+        {activeDates.length === 0 && (
+          <div className="flex items-center justify-center h-[200px] border-2 border-dashed border-muted-foreground/20 rounded-xl bg-muted/5">
+            <div className="text-center">
+              <div className="text-4xl mb-2 opacity-30">💝</div>
+              <div className="text-sm text-muted-foreground">No active dates</div>
+              <div className="text-xs text-muted-foreground/60 mt-1">Waiting for matches...</div>
             </div>
-          ))}
-          {activeDates.length === 0 && (
-            <div className="flex items-center justify-center h-[200px] border-2 border-dashed border-muted-foreground/20 rounded-xl bg-muted/5">
-              <div className="text-center">
-                <div className="text-4xl mb-2 opacity-30">💝</div>
-                <div className="text-sm text-muted-foreground">No active dates</div>
-                <div className="text-xs text-muted-foreground/60 mt-1">Waiting for matches...</div>
-              </div>
-            </div>
-          )}
-        </div>
-      </ScrollArea>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

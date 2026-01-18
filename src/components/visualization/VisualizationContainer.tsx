@@ -56,16 +56,16 @@ export function VisualizationContainer({ children }: VisualizationContainerProps
           <div className="w-8 bg-card" />
           
           {/* Main content area */}
-          <div className="flex-1 flex flex-col min-w-0">
-            <TabsContent value="simulation" className="flex-1 relative min-h-0 m-0 border-2 border-border rounded-lg shadow-lg bg-card overflow-hidden">
+          <div className="flex-1 min-w-0 min-h-0 relative">
+            <TabsContent value="simulation" className="absolute inset-0 m-0 border-2 border-border rounded-lg shadow-lg bg-card overflow-hidden">
               {children}
             </TabsContent>
             
-            <TabsContent value="chat" className="flex-1 min-h-0 m-0 border-2 border-border rounded-lg shadow-lg bg-card">
+            <TabsContent value="chat" className="absolute inset-0 m-0 border-2 border-border rounded-lg shadow-lg bg-card overflow-y-auto">
               <ChatPanel />
             </TabsContent>
             
-            <TabsContent value="third" className="flex-1 min-h-0 m-0 border-2 border-border rounded-lg shadow-lg bg-card">
+            <TabsContent value="third" className="absolute inset-0 m-0 border-2 border-border rounded-lg shadow-lg bg-card overflow-y-auto">
               <ThirdTabPanel />
             </TabsContent>
           </div>
