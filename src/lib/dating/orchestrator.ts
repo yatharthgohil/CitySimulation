@@ -34,8 +34,8 @@ export class DateOrchestrator {
   private dateQueue: DateSession[] = [];
   private completedDates: Map<string, DateSession> = new Map();
   private anthropicClient: Anthropic | null = null;
-  private ollamaUrls: string[] = [];
-  private ollamaIndex = 0;
+  private openRouterApiKey: string = '';
+  private openRouterModel: string = 'anthropic/claude-3-haiku';
   private logDir = path.join(process.cwd(), 'logs', 'dating');
 
   // Expose getter for backfilling
@@ -45,7 +45,7 @@ export class DateOrchestrator {
 
   constructor() {
     this.initializeAnthropic();
-    this.initializeOllamaUrls();
+    this.initializeOpenRouter();
     this.loadStateFromLogs();
     // Backfill confidence for existing dates after loading state
     this.backfillConfidenceScores();
@@ -58,19 +58,9 @@ export class DateOrchestrator {
     }
   }
 
-  private initializeOllamaUrls() {
-    const urls = process.env.OLLAMA_BASE_URLS || process.env.OLLAMA_BASE_URL || '';
-    const bases = urls
-      .split(',')
-      .map(url => url.trim())
-      .filter(Boolean);
-
-    if (bases.length === 0) {
-      this.ollamaUrls = ['http://localhost:11434/api/chat'];
-      return;
-    }
-
-    this.ollamaUrls = bases.map(base => base.endsWith('/api/chat') ? base : `${base.replace(/\/$/, '')}/api/chat`);
+  private initializeOpenRouter() {
+    this.openRouterApiKey = process.env.OPENROUTER_API_KEY || '';
+    this.openRouterModel = process.env.OPENROUTER_MODEL || 'anthropic/claude-3-haiku';
   }
 
   scheduleDate(user1: UserProfile, user2: UserProfile, durationMs: number = 120000): DateSession {
@@ -79,7 +69,6 @@ export class DateOrchestrator {
 
     const systemPrompt1 = generateSystemPrompt(user1);
     const systemPrompt2 = generateSystemPrompt(user2);
-    const [url1, url2] = this.getNextOllamaUrls();
 
     const dateSession: DateSession = {
       id: `date-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -87,8 +76,8 @@ export class DateOrchestrator {
       user2Id: user2.id,
       user1Name: user1.name,
       user2Name: user2.name,
-      agent1: new DatingAgent(user1, systemPrompt1, url1),
-      agent2: new DatingAgent(user2, systemPrompt2, url2),
+      agent1: new DatingAgent(user1, systemPrompt1, this.openRouterApiKey, this.openRouterModel),
+      agent2: new DatingAgent(user2, systemPrompt2, this.openRouterApiKey, this.openRouterModel),
       startTime,
       endTime,
       messages: [],
@@ -98,17 +87,6 @@ export class DateOrchestrator {
     this.dateQueue.push(dateSession);
     this.logDateEvent('scheduled', dateSession);
     return dateSession;
-  }
-
-  private getNextOllamaUrls(): [string, string] {
-    if (this.ollamaUrls.length === 1) {
-      return [this.ollamaUrls[0], this.ollamaUrls[0]];
-    }
-
-    const url1 = this.ollamaUrls[this.ollamaIndex % this.ollamaUrls.length];
-    const url2 = this.ollamaUrls[(this.ollamaIndex + 1) % this.ollamaUrls.length];
-    this.ollamaIndex = (this.ollamaIndex + 2) % this.ollamaUrls.length;
-    return [url1, url2];
   }
 
   async startDate(dateId: string): Promise<void> {
@@ -432,25 +410,52 @@ export class DateOrchestrator {
 
     const summaryPrompt = `Summarize this date conversation in 2-3 sentences, focusing on compatibility and key moments:\n\n${conversationText}`;
 
-    try {
-      const response = await fetch('http://localhost:11434/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'adi0adi/ollama_stheno-8b_v3.1_q6k',
-          prompt: summaryPrompt,
-          stream: false,
-          options: { temperature: 0.5, num_predict: 100 }
-        })
-      });
-
-      const data = await response.json();
+    if (!this.openRouterApiKey) {
       return {
-        summary: data.response || 'Date completed.',
+        summary: 'Date completed successfully.',
         sentiment: 'Neutral',
         compatibilityRating: 5
       };
-    } catch {
+    }
+
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.openRouterApiKey}`,
+          'HTTP-Referer': process.env.OPENROUTER_HTTP_REFERER || 'http://localhost:3000',
+          'X-Title': process.env.OPENROUTER_APP_NAME || 'Isometric City Dating'
+        },
+        body: JSON.stringify({
+          model: this.openRouterModel,
+          messages: [
+            {
+              role: 'user',
+              content: summaryPrompt
+            }
+          ],
+          stream: false,
+          temperature: 0.5,
+          max_tokens: 100
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`OpenRouter request failed: ${response.statusText} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      const summary = data.choices?.[0]?.message?.content || 'Date completed.';
+      
+      return {
+        summary: summary.trim(),
+        sentiment: 'Neutral',
+        compatibilityRating: 5
+      };
+    } catch (error) {
+      console.error('OpenRouter summary generation error:', error);
       return {
         summary: 'Date completed successfully.',
         sentiment: 'Neutral',

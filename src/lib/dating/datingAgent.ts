@@ -5,14 +5,19 @@ interface Message {
   content: string;
 }
 
-interface OllamaChatChunk {
+interface OpenRouterChunk {
+  id: string;
+  object: string;
+  created: number;
   model: string;
-  created_at: string;
-  message: {
-    role: string;
-    content: string;
-  };
-  done: boolean;
+  choices: Array<{
+    index: number;
+    delta: {
+      role?: string;
+      content?: string;
+    };
+    finish_reason: string | null;
+  }>;
 }
 
 type StreamTokenHandler = (token: string) => void;
@@ -22,21 +27,22 @@ export class DatingAgent {
   private userName: string;
   private systemPrompt: string;
   private conversationHistory: Message[] = [];
-  private ollamaUrl: string;
-  private model = 'adi0adi/ollama_stheno-8b_v3.1_q6k';
+  private apiKey: string;
+  private model: string;
 
-  constructor(user: UserProfile, systemPrompt: string, ollamaUrl?: string) {
+  constructor(user: UserProfile, systemPrompt: string, apiKey?: string, model?: string) {
     this.userId = user.id;
     this.userName = user.name;
     this.systemPrompt = systemPrompt;
-    this.ollamaUrl = ollamaUrl || 'http://localhost:11434/api/chat';
+    this.apiKey = apiKey || process.env.OPENROUTER_API_KEY || '';
+    this.model = model || process.env.OPENROUTER_MODEL || 'anthropic/claude-3-haiku';
     this.conversationHistory.push({ role: 'system', content: systemPrompt });
   }
 
   async respondToMessage(incomingMessage: string, onToken?: StreamTokenHandler): Promise<string> {
     this.conversationHistory.push({ role: 'user', content: incomingMessage });
 
-    const response = await this.streamOllamaChat(onToken);
+    const response = await this.streamOpenRouterChat(onToken);
     const cleanedResponse = this.cleanResponse(response);
 
     this.conversationHistory.push({ role: 'assistant', content: cleanedResponse });
@@ -50,34 +56,42 @@ export class DatingAgent {
     };
     this.conversationHistory.push(initMessage);
 
-    const response = await this.streamOllamaChat(onToken);
+    const response = await this.streamOpenRouterChat(onToken);
     const cleanedResponse = this.cleanResponse(response);
     this.conversationHistory.push({ role: 'assistant', content: cleanedResponse });
     return cleanedResponse;
   }
 
-  private async streamOllamaChat(onToken?: StreamTokenHandler): Promise<string> {
+  private async streamOpenRouterChat(onToken?: StreamTokenHandler): Promise<string> {
+    if (!this.apiKey) {
+      throw new Error('OpenRouter API key is not configured. Set OPENROUTER_API_KEY environment variable.');
+    }
+
     const messages = this.conversationHistory.map(msg => ({
       role: msg.role === 'system' ? 'system' : msg.role === 'assistant' ? 'assistant' : 'user',
       content: msg.content
     }));
 
-    const response = await fetch(this.ollamaUrl, {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`,
+        'HTTP-Referer': process.env.OPENROUTER_HTTP_REFERER || 'http://localhost:3000',
+        'X-Title': process.env.OPENROUTER_APP_NAME || 'Isometric City Dating'
+      },
       body: JSON.stringify({
         model: this.model,
         messages,
         stream: true,
-        options: {
-          temperature: 0.7,
-          num_predict: 80,
-        }
+        temperature: 0.7,
+        max_tokens: 150
       })
     });
 
     if (!response.ok) {
-      throw new Error(`Ollama request failed: ${response.statusText}`);
+      const errorText = await response.text();
+      throw new Error(`OpenRouter request failed: ${response.statusText} - ${errorText}`);
     }
 
     const reader = response.body?.getReader();
@@ -91,14 +105,19 @@ export class DatingAgent {
       if (done) break;
 
       const chunk = decoder.decode(value);
-      const lines = chunk.split('\n').filter(line => line.trim());
+      const lines = chunk.split('\n').filter(line => line.trim() && line.startsWith('data: '));
 
       for (const line of lines) {
+        if (line === 'data: [DONE]') continue;
+        
         try {
-          const json: OllamaChatChunk = JSON.parse(line);
-          if (json.message?.content) {
-            fullResponse += json.message.content;
-            onToken?.(json.message.content);
+          const jsonStr = line.replace('data: ', '');
+          const json: OpenRouterChunk = JSON.parse(jsonStr);
+          
+          const content = json.choices?.[0]?.delta?.content;
+          if (content) {
+            fullResponse += content;
+            onToken?.(content);
           }
         } catch (e) {
           continue;
