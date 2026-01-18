@@ -12,17 +12,32 @@ export async function GET(request: NextRequest) {
 
   const encoder = new TextEncoder();
   let keepAliveInterval: NodeJS.Timeout;
+  let isClosed = false;
   
   const stream = new ReadableStream({
     start(controller) {
+      const safeClose = () => {
+        if (isClosed) return;
+        isClosed = true;
+        try {
+          controller.close();
+        } catch {
+          // Ignore: controller may already be closed.
+        }
+      };
+
       const checkExistingMatch = () => {
         const match = datingService.getPendingMatchForUser(userId);
         if (match) {
           const data = `data: ${JSON.stringify(match)}\n\n`;
-          controller.enqueue(encoder.encode(data));
+          try {
+            controller.enqueue(encoder.encode(data));
+          } catch {
+            // If enqueue fails, close the connection safely.
+          }
           datingService.clearPendingMatchForUser(userId);
           clearInterval(keepAliveInterval);
-          controller.close();
+          safeClose();
           return true;
         }
         return false;
@@ -35,19 +50,20 @@ export async function GET(request: NextRequest) {
       sseConnectionManager.addConnection(userId, controller);
 
       keepAliveInterval = setInterval(() => {
+        if (isClosed) return;
         try {
           controller.enqueue(encoder.encode(': keep-alive\n\n'));
-        } catch (error) {
+        } catch {
           clearInterval(keepAliveInterval);
           sseConnectionManager.removeConnection(userId);
-          controller.close();
+          safeClose();
         }
       }, 30000);
 
       request.signal.addEventListener('abort', () => {
         clearInterval(keepAliveInterval);
         sseConnectionManager.removeConnection(userId);
-        controller.close();
+        safeClose();
       });
     },
   });
