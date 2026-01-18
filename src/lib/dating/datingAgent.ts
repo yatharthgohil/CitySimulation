@@ -72,67 +72,29 @@ export class DatingAgent {
       content: msg.content
     }));
 
-    const maxRetries = 3;
-    let lastError: Error | null = null;
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`,
+        'HTTP-Referer': process.env.OPENROUTER_HTTP_REFERER || 'http://localhost:3000',
+        'X-Title': process.env.OPENROUTER_APP_NAME || 'Isometric City Dating'
+      },
+      body: JSON.stringify({
+        model: this.model,
+        messages,
+        stream: true,
+        temperature: 0.7,
+        max_tokens: 150
+      })
+    });
 
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
-      
-      try {
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.apiKey}`,
-            'HTTP-Referer': process.env.OPENROUTER_HTTP_REFERER || 'http://localhost:3000',
-            'X-Title': process.env.OPENROUTER_APP_NAME || 'Isometric City Dating'
-          },
-          body: JSON.stringify({
-            model: this.model,
-            messages,
-            stream: true,
-            temperature: 0.7,
-            max_tokens: 150
-          }),
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          const isRetryable = response.status >= 500 || response.status === 429;
-          
-          if (!isRetryable || attempt === maxRetries - 1) {
-            throw new Error(`OpenRouter request failed: ${response.statusText} - ${errorText}`);
-          }
-          
-          lastError = new Error(`OpenRouter request failed: ${response.statusText} - ${errorText}`);
-          await this.sleep(Math.pow(2, attempt) * 1000);
-          continue;
-        }
-
-        return await this.processStreamResponse(response, onToken);
-      } catch (error: any) {
-        clearTimeout(timeoutId);
-        
-        const isRetryable = error?.code === 'UND_ERR_HEADERS_TIMEOUT' || 
-                           error?.name === 'TimeoutError' ||
-                           error?.name === 'AbortError' ||
-                           error?.message?.includes('fetch failed') ||
-                           error?.message?.includes('timeout');
-        
-        if (!isRetryable || attempt === maxRetries - 1) {
-          throw error;
-        }
-        
-        lastError = error;
-        await this.sleep(Math.pow(2, attempt) * 1000);
-      }
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OpenRouter request failed: ${response.statusText} - ${errorText}`);
     }
 
-    throw lastError || new Error('OpenRouter request failed after retries');
+    return await this.processStreamResponse(response, onToken);
   }
 
   private async processStreamResponse(response: Response, onToken?: StreamTokenHandler): Promise<string> {
@@ -170,9 +132,6 @@ export class DatingAgent {
     return fullResponse.trim();
   }
 
-  private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
 
   private cleanResponse(response: string): string {
     let cleaned = response.trim();

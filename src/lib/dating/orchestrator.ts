@@ -34,12 +34,6 @@ const CHAT_MODELS = [
   'openai/gpt-4o',
   'anthropic/claude-3-haiku',
   'anthropic/claude-3-5-sonnet',
-  'google/gemini-2.0-flash-001',
-  'google/gemini-flash-1.5',
-  'meta-llama/llama-3.3-70b-instruct',
-  'mistralai/mistral-small-24b-instruct-2501',
-  'qwen/qwen-2.5-72b-instruct',
-  'deepseek/deepseek-chat',
 ];
 
 export class DateOrchestrator {

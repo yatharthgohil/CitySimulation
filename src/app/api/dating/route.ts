@@ -90,6 +90,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
     }
   } catch (error) {
+    console.error('[POST /api/dating] Error:', error);
+    console.error('[POST /api/dating] Action:', action);
+    if (error instanceof Error) {
+      console.error('[POST /api/dating] Stack:', error.stack);
+    }
     return NextResponse.json({ 
       error: error instanceof Error ? error.message : 'Unknown error' 
     }, { status: 500 });
