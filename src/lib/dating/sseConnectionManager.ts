@@ -46,6 +46,10 @@ class SSEConnectionManager extends EventEmitter {
   getConnectionCount(): number {
     return this.connections.size;
   }
+
+  getConnectedUserIds(): string[] {
+    return Array.from(this.connections.keys());
+  }
 }
 
 export const sseConnectionManager = new SSEConnectionManager();
