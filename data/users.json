@@ -160,5 +160,41 @@
     "dateSummary": "No dates recorded yet.",
     "compatibilityInsight": "Analysis pending...",
     "createdAt": "2026-01-17T22:03:46.624Z"
+  },
+  {
+    "id": "user-1768703673182-1dnlmfjq2",
+    "name": "Jinash",
+    "age": 20,
+    "gender": "male",
+    "dateOfBirth": "2003-01-17",
+    "race": "asian",
+    "preferences": "I’m Jinash Rouniyar, a huge fan of pro wrestling and love pretty girls.",
+    "skinColor": "#ffc8a8",
+    "shirtColor": "#22c55e",
+    "pantsColor": "#365314",
+    "hasHat": false,
+    "hatColor": null,
+    "relationshipArc": "Coming soon...",
+    "dateSummary": "No dates recorded yet.",
+    "compatibilityInsight": "Analysis pending...",
+    "createdAt": "2026-01-18T02:34:33.182Z"
+  },
+  {
+    "id": "user-1768703782980-wdcayymrc",
+    "name": "Mariah",
+    "age": 20,
+    "gender": "female",
+    "dateOfBirth": "2003-01-17",
+    "race": "asian",
+    "preferences": "I’m a pro wrestler",
+    "skinColor": "#fdbf7e",
+    "shirtColor": "#ec4899",
+    "pantsColor": "#7c2d12",
+    "hasHat": false,
+    "hatColor": null,
+    "relationshipArc": "Coming soon...",
+    "dateSummary": "No dates recorded yet.",
+    "compatibilityInsight": "Analysis pending...",
+    "createdAt": "2026-01-18T02:36:22.980Z"
   }
 ]

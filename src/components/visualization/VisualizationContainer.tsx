@@ -5,6 +5,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { SpeedControls } from './SpeedControls';
 import { ChatPanel } from './ChatPanel';
 import { ThirdTabPanel } from './ThirdTabPanel';
+import { PredictionsPanel } from './PredictionsPanel';
 import { WeatherDisplay } from './WeatherDisplay';
 
 interface VisualizationContainerProps {
@@ -43,6 +44,12 @@ export function VisualizationContainer({ children }: VisualizationContainerProps
               >
                 User Database
               </TabsTrigger>
+              <TabsTrigger 
+                value="predictions"
+                className="rounded-t-lg rounded-b-none border-2 border-b-0 border-l-0 border-border bg-muted/30 data-[state=active]:bg-card data-[state=active]:border-b-2 data-[state=active]:border-b-card data-[state=active]:mb-[-2px] data-[state=active]:shadow-none px-4 py-2 relative z-10"
+              >
+                Predictions
+              </TabsTrigger>
             </TabsList>
           </div>
           
@@ -67,6 +74,10 @@ export function VisualizationContainer({ children }: VisualizationContainerProps
             
             <TabsContent value="third" className="absolute inset-0 m-0 border-2 border-border rounded-lg shadow-lg bg-card overflow-y-auto">
               <ThirdTabPanel />
+            </TabsContent>
+            
+            <TabsContent value="predictions" className="absolute inset-0 m-0 border-2 border-border rounded-lg shadow-lg bg-card overflow-y-auto">
+              <PredictionsPanel />
             </TabsContent>
           </div>
           

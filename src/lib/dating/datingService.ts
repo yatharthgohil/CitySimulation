@@ -2,8 +2,18 @@ import { DateOrchestrator, DateSession } from './orchestrator';
 import type { UserProfile } from '@/lib/userDatabase';
 import { generateCompatibilityInsight } from './compatibilityInsight';
 import { calculateConfidenceFromSummary } from './confidenceFromSummary';
+import { sseConnectionManager } from './sseConnectionManager';
 import fs from 'fs';
 import path from 'path';
+
+interface PendingMatch {
+  partnerName: string;
+  compatibilityPercentage: number;
+  locationImageUrl?: string;
+  restaurantName?: string;
+  bookingId?: string;
+  bookingTime?: string;
+}
 
 class DatingService {
   private orchestrator: DateOrchestrator;
@@ -13,6 +23,7 @@ class DatingService {
   private dateDurationMs: number = 120000;
   private isScheduling: boolean = false;
   private isPaused: boolean = true;
+  private pendingMatches: Map<string, PendingMatch> = new Map();
 
   constructor() {
     this.orchestrator = new DateOrchestrator();
@@ -98,6 +109,8 @@ class DatingService {
         const date = this.scheduleRoundRobinDate();
         if (date) {
           newDates.push(date);
+          
+          await this.createMatchForUsers(date);
         }
       }
  
@@ -108,6 +121,56 @@ class DatingService {
     } finally {
       this.isScheduling = false;
     }
+  }
+
+  private async createMatchForUsers(date: DateSession): Promise<void> {
+    const compatibilityPercentage = date.compatibilityRating 
+      ? Math.round(date.compatibilityRating * 10) 
+      : 85;
+
+    const restaurantName = 'The Romantic Bistro';
+    const bookingId = `booking-${date.id}`;
+    const bookingTime = date.startTime.toISOString();
+    const locationImageUrl = undefined;
+
+    const matchData1: PendingMatch = {
+      partnerName: date.user2Name,
+      compatibilityPercentage,
+      locationImageUrl,
+      restaurantName,
+      bookingId,
+      bookingTime,
+    };
+
+    const matchData2: PendingMatch = {
+      partnerName: date.user1Name,
+      compatibilityPercentage,
+      locationImageUrl,
+      restaurantName,
+      bookingId,
+      bookingTime,
+    };
+
+    this.pendingMatches.set(date.user1Id, matchData1);
+    this.pendingMatches.set(date.user2Id, matchData2);
+
+    if (sseConnectionManager.hasConnection(date.user1Id)) {
+      sseConnectionManager.sendMatch(date.user1Id, matchData1);
+      this.pendingMatches.delete(date.user1Id);
+    }
+
+    if (sseConnectionManager.hasConnection(date.user2Id)) {
+      sseConnectionManager.sendMatch(date.user2Id, matchData2);
+      this.pendingMatches.delete(date.user2Id);
+    }
+  }
+
+  getPendingMatchForUser(userId: string): PendingMatch | null {
+    return this.pendingMatches.get(userId) || null;
+  }
+
+  clearPendingMatchForUser(userId: string): void {
+    this.pendingMatches.delete(userId);
   }
 
   pauseScheduling() {

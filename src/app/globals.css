@@ -597,3 +597,115 @@ html, body {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   }
 }
+
+/* ============================================
+   Polymarket-style Prediction Market Styles
+   All classes prefixed with 'pm-' to avoid conflicts
+   ============================================ */
+
+.pm-card {
+  @apply rounded-lg p-4 transition-all duration-300 ease-out cursor-pointer;
+  background: hsl(220, 25%, 12%);
+}
+
+.pm-card:hover {
+  background: hsl(220, 25%, 14%);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  transform: translateY(-2px) scale(1.01);
+}
+
+.pm-card:active {
+  transform: scale(0.98);
+  transition: transform 0.1s ease;
+}
+
+.pm-btn-yes {
+  @apply bg-transparent font-medium transition-all duration-200 px-4 py-2 rounded-md;
+  border: 1px solid hsl(152, 82%, 45%);
+  color: hsl(152, 82%, 45%);
+}
+
+.pm-btn-yes:hover {
+  background: hsl(152, 82%, 45%);
+  color: white;
+}
+
+.pm-btn-no {
+  @apply bg-transparent font-medium transition-all duration-200 px-4 py-2 rounded-md;
+  border: 1px solid hsl(0, 72%, 60%);
+  color: hsl(0, 72%, 60%);
+}
+
+.pm-btn-no:hover {
+  background: hsl(0, 72%, 60%);
+  color: white;
+}
+
+.pm-btn-micro {
+  @apply transition-all duration-150;
+}
+
+.pm-btn-micro:active {
+  transform: scale(0.95);
+}
+
+.pm-pill {
+  @apply px-3 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer whitespace-nowrap;
+  background: hsl(220, 20%, 16%);
+  color: hsl(220, 10%, 55%);
+}
+
+.pm-pill:hover {
+  background: hsl(220, 20%, 22%);
+  color: hsl(220, 10%, 75%);
+}
+
+.pm-pill-active {
+  @apply px-3 py-1.5 rounded-full text-sm font-medium cursor-pointer whitespace-nowrap;
+  background: hsl(220, 20%, 16%);
+  border: 1px solid hsl(210, 100%, 52%);
+  color: hsl(210, 100%, 52%);
+}
+
+.pm-icon-hover {
+  @apply transition-all duration-200 cursor-pointer;
+}
+
+.pm-icon-hover:hover {
+  color: hsl(0, 0%, 100%);
+  transform: scale(1.1);
+}
+
+.pm-circular-progress {
+  @apply relative inline-flex items-center justify-center;
+}
+
+.pm-header-title {
+  @apply text-2xl font-bold mb-1;
+}
+
+.pm-header-subtitle {
+  @apply text-sm;
+  color: hsl(220, 10%, 55%);
+}
+
+.pm-header {
+  background: hsl(220, 30%, 6%);
+  border-bottom: 1px solid hsl(220, 15%, 20%);
+}
+
+.pm-search-input {
+  @apply w-full rounded-lg pl-10 pr-10 py-2.5 text-sm text-foreground transition-all duration-200;
+  background: hsl(220, 20%, 14%);
+  border: 1px solid hsl(220, 15%, 20%);
+}
+
+.pm-search-input::placeholder {
+  color: hsl(220, 10%, 55%);
+}
+
+.pm-search-input:focus {
+  outline: none;
+  border-color: hsl(210, 100%, 52%);
+  box-shadow: 0 0 0 2px hsl(210, 100%, 52%, 0.2);
+}
