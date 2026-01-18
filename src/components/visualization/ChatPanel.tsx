@@ -153,8 +153,11 @@ export function ChatPanel() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'resume' })
     });
-    fetchData();
+    const timeoutId = setTimeout(() => {
+      fetchData();
+    }, 0);
     return () => {
+      clearTimeout(timeoutId);
       fetch('/api/dating', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -207,14 +210,14 @@ export function ChatPanel() {
         </p>
       </div>
 
-      <div className="flex flex-col gap-4 pb-4">
+      <div className="grid grid-cols-3 gap-4 pb-4">
         {activeDates.slice(0, 3).map((date) => (
-          <div key={date.id} className="h-[300px]">
+          <div key={date.id} className="h-[600px]">
             <DateCard date={date} />
           </div>
         ))}
         {activeDates.length === 0 && (
-          <div className="flex items-center justify-center h-[200px] border-2 border-dashed border-muted-foreground/20 rounded-xl bg-muted/5">
+          <div className="col-span-3 flex items-center justify-center h-[200px] border-2 border-dashed border-muted-foreground/20 rounded-xl bg-muted/5">
             <div className="text-center">
               <div className="text-4xl mb-2 opacity-30">💝</div>
               <div className="text-sm text-muted-foreground">No active dates</div>
