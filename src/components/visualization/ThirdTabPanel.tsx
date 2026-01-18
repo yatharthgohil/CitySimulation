@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -55,8 +55,8 @@ interface UserDate {
 }
 
 
-// Simple pixelated avatar component
-function PixelatedAvatar({ profile, size = 80 }: { profile: UserProfile; size?: number }) {
+// Avatar component that draws character appearance
+function UserAvatar({ profile, size = 80 }: { profile: UserProfile; size?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -128,7 +128,6 @@ function PixelatedAvatar({ profile, size = 80 }: { profile: UserProfile; size?: 
       width={size}
       height={size}
       className="rounded-full"
-      style={{ imageRendering: 'pixelated' }}
     />
   );
 }
@@ -141,11 +140,9 @@ function ProfileCard({ profile, onClick }: { profile: UserProfile; onClick: () =
       onClick={onClick}
     >
       <CardContent className="p-4 flex flex-col items-center gap-3">
-        <div className="w-20 h-20 rounded-full bg-muted border-2 border-border overflow-hidden flex items-center justify-center">
-          <PixelatedAvatar profile={profile} size={80} />
-        </div>
-        <div className="text-center">
-          <h3 className="font-medium text-sm text-foreground truncate w-full">{profile.name}</h3>
+        <UserAvatar profile={profile} size={64} />
+        <div className="text-center w-full">
+          <h3 className="font-medium text-sm text-foreground truncate">{profile.name}</h3>
           <p className="text-xs text-muted-foreground capitalize">{profile.gender}</p>
         </div>
       </CardContent>
@@ -156,8 +153,8 @@ function ProfileCard({ profile, onClick }: { profile: UserProfile; onClick: () =
 // Profile Avatar Component for Dialog
 function ProfileAvatar({ profile }: { profile: UserProfile }) {
   return (
-    <div className="w-24 h-24 rounded-full bg-muted border-2 border-border overflow-hidden flex items-center justify-center flex-shrink-0">
-      <PixelatedAvatar profile={profile} size={96} />
+    <div className="flex-shrink-0">
+      <UserAvatar profile={profile} size={64} />
     </div>
   );
 }
@@ -390,23 +387,23 @@ export function ThirdTabPanel() {
 
       {/* Detailed Profile Dialog */}
       <Dialog open={!!selectedProfile} onOpenChange={(open) => !open && setSelectedProfile(null)}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-[95vw] max-h-[95vh] w-[95vw] h-[95vh] overflow-y-auto overflow-x-hidden">
           {selectedProfile && (
             <>
               <DialogHeader>
                 <div className="flex items-center gap-4">
                   <ProfileAvatar profile={selectedProfile} />
                   <div>
-                    <DialogTitle className="text-2xl">{selectedProfile.name}</DialogTitle>
+                    <DialogTitle className="text-2xl font-semibold">{selectedProfile.name}</DialogTitle>
                     <DialogDescription className="capitalize mt-1">{selectedProfile.gender}</DialogDescription>
                   </div>
                 </div>
               </DialogHeader>
 
               <div className="space-y-6 mt-6">
-                <div>
+                <div className="w-full">
                   <h3 className="font-semibold text-lg mb-2">Events Timeline</h3>
-                  <div className="relative h-20">
+                  <div className="relative h-20 w-full">
                     <div className="absolute left-0 right-0 top-1/2 h-0.5 bg-border" />
                     <div className="absolute inset-0">
                       {timelineDates.map((date, index) => {
@@ -450,19 +447,22 @@ export function ThirdTabPanel() {
                 <Separator />
 
                 {/* Confidence Graph */}
-                <div>
+                <div className="w-full">
                   <h3 className="font-semibold text-lg mb-4">Confidence Trajectory</h3>
-                  <div className="border rounded-lg p-4 bg-muted/20">
+                  <div className="border rounded-lg p-4 bg-muted/20 w-full overflow-hidden">
                     {confidenceData.length > 0 ? (
-                      <ConfidenceGraph 
-                        data={confidenceData.map(d => ({
-                          dateId: d.dateId,
-                          confidence: d.confidence,
-                          timestamp: d.timestamp
-                        }))} 
-                        width={600} 
-                        height={200}
-                      />
+                      <div className="w-full">
+                        <ConfidenceGraph 
+                          data={confidenceData.map(d => ({
+                            dateId: d.dateId,
+                            confidence: d.confidence,
+                            timestamp: d.timestamp
+                          }))} 
+                          width={0}
+                          height={200}
+                          className="w-full"
+                        />
+                      </div>
                     ) : (
                       <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
                         No confidence data available yet. Confidence scores will appear here after dates are completed with summaries.
@@ -497,31 +497,31 @@ export function ThirdTabPanel() {
         </DialogContent>
       </Dialog>
       <Dialog open={!!selectedDate} onOpenChange={(open) => !open && closeChat()}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[70vh] w-[700px] flex flex-col">
           {selectedDate && (
             <>
-              <DialogHeader>
-                <DialogTitle className="text-xl">{selectedProfile?.name} × {getOtherName(selectedDate)}</DialogTitle>
+              <DialogHeader className="flex-shrink-0">
+                <DialogTitle className="text-xl font-semibold">{selectedProfile?.name} × {getOtherName(selectedDate)}</DialogTitle>
                 <DialogDescription>
-                  {selectedDate.status === 'active' ? 'Live date' : 'Past date'}
+                  {selectedDate.status === 'active' ? 'Live date' : 'Past date'} • {getDateTimeText(selectedDate)} • {getDurationText(selectedDate)}
                 </DialogDescription>
               </DialogHeader>
-              <div className="mt-4 border rounded-lg bg-muted/20">
-                <ScrollArea className="h-80 p-3">
+              <div className="mt-4 border rounded-lg bg-muted/20 flex-1 min-h-0 flex flex-col overflow-hidden">
+                <ScrollArea className="flex-1 p-4 overflow-y-auto overflow-x-hidden">
                   <div className="space-y-3">
                     {getChatMessages(selectedDate).map((msg, idx) => {
                       const isUser1 = msg.sender === selectedDate.user1Id;
                       return (
                         <div key={idx} className={`flex ${isUser1 ? 'justify-start' : 'justify-end'}`}>
-                          <div className={`max-w-[80%] rounded-2xl px-3 py-2 ${
+                          <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 ${
                             isUser1 
                               ? 'bg-primary/10 border border-primary/20 rounded-tl-sm' 
                               : 'bg-secondary border border-secondary/50 rounded-tr-sm'
                           }`}>
-                            <div className="text-[10px] font-medium text-muted-foreground mb-0.5">
+                            <div className="text-xs font-medium text-muted-foreground mb-1">
                               {msg.senderName}
                             </div>
-                            <div className="text-sm leading-relaxed">{msg.message}</div>
+                            <div className="text-sm leading-relaxed break-words">{msg.message}</div>
                           </div>
                         </div>
                       );
@@ -529,18 +529,28 @@ export function ThirdTabPanel() {
                     {getChatMessages(selectedDate).length === 0 && (
                       <div className="text-sm text-muted-foreground text-center py-8">No chat history yet</div>
                     )}
-                    
-                    {/* Summary Section - right after chat messages */}
-                    {selectedDate.summary && (
-                      <div className="mt-4 pt-3 border-t border-border">
-                        <h4 className="text-sm font-semibold mb-2 text-foreground">Summary</h4>
-                        <div className="text-sm text-blue-600/80 dark:text-blue-400/80 italic pl-2 border-l-2 border-blue-500/30">
-                          {selectedDate.summary}
-                        </div>
+                  </div>
+                </ScrollArea>
+                
+                {/* Summary Section - at bottom after chat messages */}
+                {selectedDate.summary && (
+                  <div className="px-4 py-3 border-t border-border bg-muted/30 flex-shrink-0">
+                    <h4 className="text-sm font-semibold mb-2 text-foreground">Summary</h4>
+                    <div className="text-sm text-blue-600/80 dark:text-blue-400/80 italic pl-2 border-l-2 border-blue-500/30">
+                      {selectedDate.summary}
+                    </div>
+                    {selectedDate.compatibilityRating !== undefined && (
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        Compatibility Rating: {selectedDate.compatibilityRating.toFixed(1)}/10
+                      </div>
+                    )}
+                    {selectedDate.confidence !== undefined && (
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        Confidence: {(selectedDate.confidence * 100).toFixed(1)}%
                       </div>
                     )}
                   </div>
-                </ScrollArea>
+                )}
               </div>
             </>
           )}
