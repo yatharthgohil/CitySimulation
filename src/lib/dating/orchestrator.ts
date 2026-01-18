@@ -5,6 +5,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { EventEmitter } from 'events';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { calculateConfidenceFromSummary } from './confidenceFromSummary';
+import { bestMatchDetector } from './bestMatchDetector';
 
 export interface DateSession {
   id: string;
@@ -22,11 +24,7 @@ export interface DateSession {
   sentiment?: string;
   compatibilityRating?: number;
   conversationHistory?: Array<{ sender: string; senderName: string; message: string; timestamp: Date }>;
-}
-
-interface Mem0Client {
-  add: (messages: Array<{ role: string; content: string }>, options: { user_id: string }) => Promise<void>;
-  search: (query: string, options: Record<string, unknown>) => Promise<unknown>;
+  confidence?: number;
 }
 
 export const datingEventBus = new EventEmitter();
@@ -35,28 +33,22 @@ export class DateOrchestrator {
   private activeDates: Map<string, DateSession> = new Map();
   private dateQueue: DateSession[] = [];
   private completedDates: Map<string, DateSession> = new Map();
-  private mem0Client: Mem0Client | null = null;
   private anthropicClient: Anthropic | null = null;
   private ollamaUrls: string[] = [];
   private ollamaIndex = 0;
   private logDir = path.join(process.cwd(), 'logs', 'dating');
 
-  constructor(mem0Config?: { apiKey: string }) {
-    if (mem0Config) {
-      this.initializeMem0(mem0Config);
-    }
+  // Expose getter for backfilling
+  getAllCompletedDates(): DateSession[] {
+    return Array.from(this.completedDates.values());
+  }
+
+  constructor() {
     this.initializeAnthropic();
     this.initializeOllamaUrls();
     this.loadStateFromLogs();
-  }
-
-  private async initializeMem0(config: { apiKey: string }) {
-    try {
-      const MemoryClient = (await import('mem0ai')).default;
-      this.mem0Client = new MemoryClient({ apiKey: config.apiKey }) as unknown as Mem0Client;
-    } catch (e) {
-      console.warn('Mem0 not initialized (optional):', e);
-    }
+    // Backfill confidence for existing dates after loading state
+    this.backfillConfidenceScores();
   }
 
   private initializeAnthropic() {
@@ -210,15 +202,23 @@ export class DateOrchestrator {
     dateSession.summary = summaryData.summary;
     dateSession.sentiment = summaryData.sentiment;
     dateSession.compatibilityRating = summaryData.compatibilityRating;
-    dateSession.status = 'completed';
-
-    if (this.mem0Client) {
-      await this.updateMemories(dateSession, summaryData.summary);
+    
+    // Calculate confidence from summary
+    if (dateSession.summary) {
+      dateSession.confidence = calculateConfidenceFromSummary(dateSession.summary);
     }
+    
+    dateSession.status = 'completed';
 
     await this.logDateEvent('completed', dateSession);
     this.completedDates.set(dateId, dateSession);
     this.activeDates.delete(dateId);
+    
+    // Check for best matches for both users
+    const allCompletedDates = Array.from(this.completedDates.values());
+    bestMatchDetector.checkAndEmitBestMatches(dateSession.user1Id, allCompletedDates);
+    bestMatchDetector.checkAndEmitBestMatches(dateSession.user2Id, allCompletedDates);
+    
     datingEventBus.emit('datesUpdated', { dateId: dateSession.id, status: dateSession.status });
   }
 
@@ -285,7 +285,8 @@ export class DateOrchestrator {
       sentiment: dateSession.sentiment,
       compatibilityRating: dateSession.compatibilityRating,
       messages: dateSession.messages.map(toMessage),
-      conversationHistory: dateSession.conversationHistory ? dateSession.conversationHistory.map(toMessage) : undefined
+      conversationHistory: dateSession.conversationHistory ? dateSession.conversationHistory.map(toMessage) : undefined,
+      confidence: dateSession.confidence
     };
   }
 
@@ -395,6 +396,7 @@ export class DateOrchestrator {
     compatibilityRating?: number;
     messages?: Array<{ sender: string; senderName: string; message: string; timestamp: string }>;
     conversationHistory?: Array<{ sender: string; senderName: string; message: string; timestamp: string }>;
+    confidence?: number;
   }): DateSession {
     const toMessage = (message: { sender: string; senderName: string; message: string; timestamp: string }) => ({
       sender: message.sender,
@@ -418,7 +420,8 @@ export class DateOrchestrator {
       summary: date.summary,
       sentiment: date.sentiment,
       compatibilityRating: date.compatibilityRating,
-      conversationHistory: date.conversationHistory ? date.conversationHistory.map(toMessage) : undefined
+      conversationHistory: date.conversationHistory ? date.conversationHistory.map(toMessage) : undefined,
+      confidence: date.confidence
     };
   }
 
@@ -456,26 +459,6 @@ export class DateOrchestrator {
     }
   }
 
-  private async updateMemories(dateSession: DateSession, summary: string) {
-    if (!this.mem0Client) return;
-
-    try {
-      const user1Memory = [
-        { role: 'user', content: `I went on a date.` },
-        { role: 'assistant', content: `You had a date with ${dateSession.user2Name}. ${summary}` }
-      ];
-      const user2Memory = [
-        { role: 'user', content: `I went on a date.` },
-        { role: 'assistant', content: `You had a date with ${dateSession.user1Name}. ${summary}` }
-      ];
-
-      await this.mem0Client.add(user1Memory, { user_id: dateSession.user1Id });
-      await this.mem0Client.add(user2Memory, { user_id: dateSession.user2Id });
-    } catch (e) {
-      console.error('Failed to update memories:', e);
-    }
-  }
-
   getActiveUserIds(): Set<string> {
     const activeIds = new Set<string>();
     this.activeDates.forEach(date => {
@@ -507,5 +490,31 @@ export class DateOrchestrator {
 
   getActiveCount(): number {
     return this.activeDates.size;
+  }
+
+  /**
+   * Backfill confidence scores for dates that have summaries but no confidence
+   */
+  backfillConfidenceScores(): void {
+    // Check completed dates
+    for (const dateSession of this.completedDates.values()) {
+      if (dateSession.summary && dateSession.confidence === undefined) {
+        dateSession.confidence = calculateConfidenceFromSummary(dateSession.summary);
+      }
+    }
+
+    // Also check dates in queue that might be completed
+    for (const dateSession of this.dateQueue) {
+      if (dateSession.status === 'completed' && dateSession.summary && dateSession.confidence === undefined) {
+        dateSession.confidence = calculateConfidenceFromSummary(dateSession.summary);
+      }
+    }
+
+    // Check active dates too
+    for (const dateSession of this.activeDates.values()) {
+      if (dateSession.status === 'completed' && dateSession.summary && dateSession.confidence === undefined) {
+        dateSession.confidence = calculateConfidenceFromSummary(dateSession.summary);
+      }
+    }
   }
 }

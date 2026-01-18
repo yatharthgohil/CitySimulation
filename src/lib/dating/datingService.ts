@@ -1,5 +1,7 @@
 import { DateOrchestrator, DateSession } from './orchestrator';
 import type { UserProfile } from '@/lib/userDatabase';
+import { generateCompatibilityInsight } from './compatibilityInsight';
+import { calculateConfidenceFromSummary } from './confidenceFromSummary';
 import fs from 'fs';
 import path from 'path';
 
@@ -148,6 +150,91 @@ class DatingService {
 
   getActiveCount(): number {
     return this.orchestrator.getActiveCount();
+  }
+
+  getDatesWithConfidence(userId: string) {
+    // Backfill confidence for any dates missing it
+    this.orchestrator.backfillConfidenceScores();
+    
+    const dates = this.getDatesForUser(userId);
+    return dates
+      .filter(d => {
+        // If date has a summary but no confidence, calculate it now
+        if (d.summary && d.confidence === undefined) {
+          (d as any).confidence = calculateConfidenceFromSummary(d.summary);
+        }
+        return d.confidence !== undefined && d.status === 'completed';
+      })
+      .map(d => ({
+        dateId: d.id,
+        confidence: d.confidence!,
+        timestamp: d.endTime
+      }))
+      .sort((a, b) => {
+        const timeA = typeof a.timestamp === 'string' ? new Date(a.timestamp).getTime() : a.timestamp.getTime();
+        const timeB = typeof b.timestamp === 'string' ? new Date(b.timestamp).getTime() : b.timestamp.getTime();
+        return timeA - timeB;
+      });
+  }
+
+  async getCompatibilityInsight(userId: string, partnerId: string) {
+    const allDates = this.orchestrator.getCompletedDates();
+    return await generateCompatibilityInsight(userId, partnerId, allDates);
+  }
+
+  getBestMatchForUser(userId: string): { partnerId: string; partnerName: string; avgConfidence: number } | null {
+    const allDates = this.orchestrator.getCompletedDates();
+    
+    // Get unique partners
+    const partners = new Set<string>();
+    allDates.forEach(date => {
+      if (date.user1Id === userId) partners.add(date.user2Id);
+      if (date.user2Id === userId) partners.add(date.user1Id);
+    });
+
+    if (partners.size === 0) return null;
+
+    // Calculate average confidence per partner
+    const partnerStats = Array.from(partners).map(partnerId => {
+      const partnerDates = allDates.filter(d =>
+        ((d.user1Id === userId && d.user2Id === partnerId) ||
+         (d.user1Id === partnerId && d.user2Id === userId)) &&
+        d.status === 'completed' &&
+        d.confidence !== undefined
+      );
+
+      if (partnerDates.length === 0) return null;
+
+      const avgConfidence = partnerDates.reduce((sum, d) => sum + (d.confidence || 0), 0) / partnerDates.length;
+      const partnerName = partnerDates[0]?.user1Id === userId 
+        ? partnerDates[0].user2Name 
+        : partnerDates[0].user1Name;
+
+      return {
+        partnerId,
+        partnerName,
+        avgConfidence,
+        dateCount: partnerDates.length
+      };
+    }).filter(Boolean) as Array<{ partnerId: string; partnerName: string; avgConfidence: number; dateCount: number }>;
+
+    if (partnerStats.length === 0) return null;
+
+    // Sort by: first by avg confidence, then by number of dates
+    partnerStats.sort((a, b) => {
+      if (Math.abs(a.avgConfidence - b.avgConfidence) < 0.05) {
+        // If confidence is similar, prefer more dates
+        return b.dateCount - a.dateCount;
+      }
+      return b.avgConfidence - a.avgConfidence;
+    });
+
+    const bestMatch = partnerStats[0];
+    return {
+      partnerId: bestMatch.partnerId,
+      partnerName: bestMatch.partnerName,
+      avgConfidence: bestMatch.avgConfidence
+    };
   }
 }
 

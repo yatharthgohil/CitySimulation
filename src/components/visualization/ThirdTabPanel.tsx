@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
+import { ConfidenceGraph } from './ConfidenceGraph';
 
 // Helper function to shuffle array randomly
 const shuffleArray = <T,>(array: T[]): T[] => {
@@ -50,6 +51,7 @@ interface UserDate {
   conversationHistory?: DateMessage[];
   messages?: DateMessage[];
   isMock?: boolean;
+  confidence?: number;
 }
 
 
@@ -165,6 +167,9 @@ export function ThirdTabPanel() {
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [userDates, setUserDates] = useState<UserDate[]>([]);
   const [selectedDate, setSelectedDate] = useState<UserDate | null>(null);
+  const [confidenceData, setConfidenceData] = useState<Array<{ dateId: string; confidence: number; timestamp: string }>>([]);
+  const [compatibilityInsight, setCompatibilityInsight] = useState<string | null>(null);
+  const [bestMatchName, setBestMatchName] = useState<string | null>(null);
   
   useEffect(() => {
     const fetchUsers = async () => {
@@ -222,17 +227,42 @@ export function ThirdTabPanel() {
         setUserDates([]);
       }
     };
+    
+    const fetchConfidenceData = async () => {
+      try {
+        const response = await fetch(`/api/dating?action=confidenceData&userId=${selectedProfile.id}`);
+        const data = await response.json();
+        setConfidenceData(data.data || []);
+      } catch (error) {
+        setConfidenceData([]);
+      }
+    };
+    
     fetchDates();
+    fetchConfidenceData();
     const eventSource = new EventSource('/api/dating/stream');
     eventSource.onmessage = (event) => {
       if (event.data === 'keepalive') return;
       try {
         const payload = JSON.parse(event.data);
-        if (payload.type === 'datesUpdated') {
+        if (payload.type === 'datesUpdated' || payload.type === 'bestMatch') {
           fetchDates();
+          fetchConfidenceData();
+          // If best match event, also refresh best match
+          if (payload.type === 'bestMatch' && payload.agentId === selectedProfile?.id) {
+            fetch(`/api/dating?action=bestMatch&userId=${selectedProfile.id}`)
+              .then(res => res.json())
+              .then(data => {
+                if (data.bestMatch) {
+                  setBestMatchName(data.bestMatch.partnerName);
+                }
+              })
+              .catch(console.error);
+          }
         }
       } catch (error) {
         fetchDates();
+        fetchConfidenceData();
       }
     };
     eventSource.onerror = () => {
@@ -248,6 +278,64 @@ export function ThirdTabPanel() {
     const rest = sorted.filter(date => date.status !== 'active');
     return [...rest, ...active];
   }, [userDates]);
+
+  // Generate compatibility insight and find best match when dates change
+  useEffect(() => {
+    if (!selectedProfile || userDates.length === 0) {
+      setCompatibilityInsight(null);
+      setBestMatchName(null);
+      return;
+    }
+
+    const generateInsight = async () => {
+      try {
+        // Get best match first
+        const bestMatchResponse = await fetch(
+          `/api/dating?action=bestMatch&userId=${selectedProfile.id}`
+        );
+        const bestMatchData = await bestMatchResponse.json();
+        if (bestMatchData.bestMatch) {
+          setBestMatchName(bestMatchData.bestMatch.partnerName);
+        }
+
+        // Get all unique partners
+        const partners = new Set<string>();
+        userDates.forEach(date => {
+          if (date.user1Id === selectedProfile.id) partners.add(date.user2Id);
+          if (date.user2Id === selectedProfile.id) partners.add(date.user1Id);
+        });
+
+        // Generate insight for the partner with most dates (primary relationship)
+        if (partners.size === 0) return;
+
+        const partnerDatesCount = new Map<string, number>();
+        partners.forEach(partnerId => {
+          const count = userDates.filter(d =>
+            (d.user1Id === selectedProfile.id && d.user2Id === partnerId) ||
+            (d.user2Id === selectedProfile.id && d.user1Id === partnerId)
+          ).length;
+          partnerDatesCount.set(partnerId, count);
+        });
+
+        const topPartner = Array.from(partnerDatesCount.entries())
+          .sort((a, b) => b[1] - a[1])[0]?.[0];
+
+        if (topPartner) {
+          const response = await fetch(
+            `/api/dating?action=compatibilityInsight&userId=${selectedProfile.id}&partnerId=${topPartner}`
+          );
+          const data = await response.json();
+          if (data.insight) {
+            setCompatibilityInsight(data.insight.insight);
+          }
+        }
+      } catch (error) {
+        console.error('Error generating compatibility insight:', error);
+      }
+    };
+
+    generateInsight();
+  }, [selectedProfile, userDates]);
 
   const getOtherName = (date: UserDate) => {
     if (!selectedProfile) return '';
@@ -361,9 +449,47 @@ export function ThirdTabPanel() {
 
                 <Separator />
 
+                {/* Confidence Graph */}
+                <div>
+                  <h3 className="font-semibold text-lg mb-4">Confidence Trajectory</h3>
+                  <div className="border rounded-lg p-4 bg-muted/20">
+                    {confidenceData.length > 0 ? (
+                      <ConfidenceGraph 
+                        data={confidenceData.map(d => ({
+                          dateId: d.dateId,
+                          confidence: d.confidence,
+                          timestamp: d.timestamp
+                        }))} 
+                        width={600} 
+                        height={200}
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
+                        No confidence data available yet. Confidence scores will appear here after dates are completed with summaries.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Compatibility Insight */}
                 <div>
                   <h3 className="font-semibold text-lg mb-2">Compatibility Insight</h3>
-                  <p className="text-sm text-muted-foreground">{selectedProfile.compatibilityInsight}</p>
+                  {compatibilityInsight ? (
+                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">{compatibilityInsight}</p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">{selectedProfile.compatibilityInsight || 'Analyzing compatibility...'}</p>
+                  )}
+                  
+                  {/* Best Match Display */}
+                  {bestMatchName && (
+                    <div className="mt-4 pt-4 border-t border-border">
+                      <p className="text-sm font-semibold text-primary">
+                        Best partner compatibility: {bestMatchName}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             </>
@@ -402,6 +528,16 @@ export function ThirdTabPanel() {
                     })}
                     {getChatMessages(selectedDate).length === 0 && (
                       <div className="text-sm text-muted-foreground text-center py-8">No chat history yet</div>
+                    )}
+                    
+                    {/* Summary Section - right after chat messages */}
+                    {selectedDate.summary && (
+                      <div className="mt-4 pt-3 border-t border-border">
+                        <h4 className="text-sm font-semibold mb-2 text-foreground">Summary</h4>
+                        <div className="text-sm text-blue-600/80 dark:text-blue-400/80 italic pl-2 border-l-2 border-blue-500/30">
+                          {selectedDate.summary}
+                        </div>
+                      </div>
                     )}
                   </div>
                 </ScrollArea>

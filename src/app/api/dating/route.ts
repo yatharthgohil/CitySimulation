@@ -28,6 +28,24 @@ export async function GET(request: NextRequest) {
       if (!userId) return NextResponse.json({ error: 'userId required' }, { status: 400 });
       return NextResponse.json({ dates: datingService.getDatesForUser(userId) });
     
+    case 'confidenceData':
+      if (!userId) return NextResponse.json({ error: 'userId required' }, { status: 400 });
+      return NextResponse.json({ data: datingService.getDatesWithConfidence(userId) });
+    
+    case 'compatibilityInsight': {
+      if (!userId) return NextResponse.json({ error: 'userId required' }, { status: 400 });
+      const partnerId = searchParams.get('partnerId');
+      if (!partnerId) return NextResponse.json({ error: 'partnerId required' }, { status: 400 });
+      const insight = await datingService.getCompatibilityInsight(userId, partnerId);
+      return NextResponse.json({ insight });
+    }
+    
+    case 'bestMatch': {
+      if (!userId) return NextResponse.json({ error: 'userId required' }, { status: 400 });
+      const bestMatch = datingService.getBestMatchForUser(userId);
+      return NextResponse.json({ bestMatch });
+    }
+    
     case 'users':
       return NextResponse.json({ users: datingService.getUsers() });
     
